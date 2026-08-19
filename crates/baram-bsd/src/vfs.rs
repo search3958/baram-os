@@ -3,17 +3,28 @@ use uefi::proto::media::file::{File, FileAttribute, FileInfo, FileMode};
 use uefi::CStr16;
 
 use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use baram_font::log_line_str;
+
+const FILES_ARCHIVE: &str = "files.tar";
 
 pub fn read_file(path: &str) -> alloc::vec::Vec<u8> {
     read_file_candidates(&[path])
 }
 
-/// Read the first existing path from the same filesystem search.  Application
-/// archives use this for the `.w4a`/`.s4a` compatibility alias so a missing
-/// preferred suffix does not produce a misleading VFS error before the valid
-/// archive is tried.
+/// Read a VFS path. Mutable user files live in the FAT-readable `files.tar`
+/// archive; the old loose-file layout remains a read fallback for upgrades.
 pub fn read_file_candidates(paths: &[&str]) -> alloc::vec::Vec<u8> {
+    for path in paths {
+        if let Some(data) = read_from_files_archive(path) {
+            return data;
+        }
+    }
+    read_direct_file_candidates(paths)
+}
+
+fn read_direct_file_candidates(paths: &[&str]) -> alloc::vec::Vec<u8> {
     // Strategy 1: try image handle's filesystem (works on QEMU)
     for path in paths {
         if let Some(data) = try_read_from_image_fs(path) {
@@ -23,6 +34,189 @@ pub fn read_file_candidates(paths: &[&str]) -> alloc::vec::Vec<u8> {
 
     // Strategy 2: enumerate all SimpleFileSystem handles (more robust for real hardware)
     try_read_from_any_fs(paths)
+}
+
+/// Translate the compatibility `/apps` namespace and the public `/files`
+/// namespace into members of the on-disk archive.
+fn archive_member(path: &str) -> Option<String> {
+    let path = path.trim_start_matches('/');
+    let member = if let Some(rest) = path.strip_prefix("apps/") {
+        format!("app/{rest}")
+    } else if let Some(rest) = path.strip_prefix("files/") {
+        rest.to_string()
+    } else if path.starts_with("data/") || path.starts_with("app/") {
+        path.to_string()
+    } else {
+        return None;
+    };
+    is_safe_archive_path(&member).then_some(member)
+}
+
+fn is_safe_archive_path(path: &str) -> bool {
+    !path.is_empty()
+        && !path.starts_with('/')
+        && !path
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+        && path
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b'/'))
+}
+
+fn read_from_files_archive(path: &str) -> Option<Vec<u8>> {
+    let member = archive_member(path)?;
+    let archive = read_direct_file_candidates(&[FILES_ARCHIVE]);
+    read_archive_member(&archive, &member)
+}
+
+fn read_archive_member(archive: &[u8], wanted: &str) -> Option<Vec<u8>> {
+    let mut offset = 0usize;
+    while offset.checked_add(512)? <= archive.len() {
+        let header = &archive[offset..offset + 512];
+        if header.iter().all(|byte| *byte == 0) {
+            return None;
+        }
+        let name = tar_string(&header[0..100]);
+        let prefix = tar_string(&header[345..500]);
+        let full_name = if prefix.is_empty() {
+            name
+        } else {
+            format!("{prefix}/{name}")
+        };
+        let size = tar_octal(&header[124..136])?;
+        let data_start = offset + 512;
+        let data_end = data_start.checked_add(size)?;
+        if data_end > archive.len() {
+            return None;
+        }
+        let kind = header[156];
+        if full_name.trim_start_matches("./") == wanted && kind != b'5' {
+            return Some(archive[data_start..data_end].to_vec());
+        }
+        let padded = size.checked_add(511)? / 512 * 512;
+        offset = data_start.checked_add(padded)?;
+    }
+    None
+}
+
+struct ArchiveEntry {
+    name: String,
+    data: Vec<u8>,
+}
+
+fn parse_archive(archive: &[u8]) -> Option<Vec<ArchiveEntry>> {
+    let mut entries = Vec::new();
+    let mut offset = 0usize;
+    while offset.checked_add(512)? <= archive.len() {
+        let header = &archive[offset..offset + 512];
+        if header.iter().all(|byte| *byte == 0) {
+            return Some(entries);
+        }
+        let name = tar_string(&header[0..100]);
+        let prefix = tar_string(&header[345..500]);
+        let full_name = if prefix.is_empty() {
+            name
+        } else {
+            format!("{prefix}/{name}")
+        };
+        let size = tar_octal(&header[124..136])?;
+        let data_start = offset + 512;
+        let data_end = data_start.checked_add(size)?;
+        let safe_name = full_name.trim_start_matches("./").trim_end_matches('/');
+        if data_end > archive.len() || !is_safe_archive_path(safe_name) {
+            return None;
+        }
+        if header[156] != b'5' {
+            entries.push(ArchiveEntry {
+                name: safe_name.into(),
+                data: archive[data_start..data_end].to_vec(),
+            });
+        }
+        let padded = size.checked_add(511)? / 512 * 512;
+        offset = data_start.checked_add(padded)?;
+    }
+    None
+}
+
+fn build_archive(entries: &[ArchiveEntry]) -> Option<Vec<u8>> {
+    let mut result = Vec::new();
+    for entry in entries {
+        if entry.name.len() > 100 || !is_safe_archive_path(&entry.name) {
+            return None;
+        }
+        let mut header = [0u8; 512];
+        header[..entry.name.len()].copy_from_slice(entry.name.as_bytes());
+        write_octal(&mut header[100..108], 0o644);
+        write_octal(&mut header[108..116], 0);
+        write_octal(&mut header[116..124], 0);
+        write_octal(&mut header[124..136], entry.data.len() as u64);
+        write_octal(&mut header[136..148], 0);
+        header[156] = b'0';
+        header[257..263].copy_from_slice(b"ustar\0");
+        header[263..265].copy_from_slice(b"00");
+        header[148..156].fill(b' ');
+        let checksum: u32 = header.iter().map(|byte| *byte as u32).sum();
+        write_checksum(&mut header[148..156], checksum);
+        result.extend_from_slice(&header);
+        result.extend_from_slice(&entry.data);
+        let padding = (512 - (entry.data.len() % 512)) % 512;
+        result.extend(core::iter::repeat(0u8).take(padding));
+    }
+    result.extend(core::iter::repeat(0u8).take(1024));
+    Some(result)
+}
+
+fn write_octal(field: &mut [u8], value: u64) {
+    field.fill(b'0');
+    if field.is_empty() {
+        return;
+    }
+    field[field.len() - 1] = 0;
+    let mut value = value;
+    let mut index = field.len().saturating_sub(2);
+    while value != 0 && index < field.len() {
+        field[index] = b'0' + (value as u8 & 7);
+        value >>= 3;
+        if index == 0 {
+            break;
+        }
+        index -= 1;
+    }
+}
+
+fn write_checksum(field: &mut [u8], value: u32) {
+    field.fill(b' ');
+    let mut value = value;
+    for index in (0..6).rev() {
+        field[index] = b'0' + (value as u8 & 7);
+        value >>= 3;
+    }
+    field[6] = 0;
+    field[7] = b' ';
+}
+
+fn tar_string(bytes: &[u8]) -> String {
+    let end = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(bytes.len());
+    String::from_utf8_lossy(&bytes[..end]).trim().into()
+}
+
+fn tar_octal(bytes: &[u8]) -> Option<usize> {
+    let mut value = 0usize;
+    let mut found = false;
+    for byte in bytes {
+        match byte {
+            b'0'..=b'7' => {
+                value = value.checked_mul(8)?.checked_add((byte - b'0') as usize)?;
+                found = true;
+            }
+            0 | b' ' => {}
+            _ => return None,
+        }
+    }
+    found.then_some(value)
 }
 
 fn try_read_from_image_fs(path: &str) -> Option<alloc::vec::Vec<u8>> {
@@ -146,7 +340,99 @@ pub fn read_file_str(path: &str) -> alloc::string::String {
     alloc::string::String::from_utf8(bytes).unwrap_or_default()
 }
 
+#[derive(Clone)]
+pub struct FileEntry {
+    pub name: String,
+    pub is_dir: bool,
+}
+
+/// Convert a `files://` URI into the VFS namespace used by the archive.
+pub fn parse_files_uri(uri: &str) -> Option<String> {
+    let path = uri.trim().strip_prefix("files://")?.trim_start_matches('/');
+    let path = path.trim_end_matches('/');
+    if path.is_empty() {
+        return Some("files/".into());
+    }
+    if !is_safe_archive_path(path) {
+        return None;
+    }
+    Some(format!("files/{path}"))
+}
+
+/// List the immediate children of an archive directory. Directory entries are
+/// inferred from member prefixes because the compact TAR writer omits empty
+/// directory records when rewriting the archive.
+pub fn list_files(path: &str) -> Vec<FileEntry> {
+    let vfs_path = parse_files_uri(path).unwrap_or_else(|| path.into());
+    let prefix = if vfs_path.trim_end_matches('/') == "files" {
+        String::new()
+    } else {
+        let Some(directory) = archive_member(&vfs_path) else {
+            return Vec::new();
+        };
+        format!("{}/", directory.trim_end_matches('/'))
+    };
+    let archive = read_direct_file_candidates(&[FILES_ARCHIVE]);
+    let Some(entries) = parse_archive(&archive) else {
+        return Vec::new();
+    };
+    let mut result = Vec::new();
+    for entry in entries {
+        let Some(rest) = entry.name.strip_prefix(&prefix) else {
+            continue;
+        };
+        let (name, is_dir) = match rest.split_once('/') {
+            Some((name, _)) => (name, true),
+            None => (rest, false),
+        };
+        if name.is_empty() || result.iter().any(|item: &FileEntry| item.name == name) {
+            continue;
+        }
+        result.push(FileEntry {
+            name: name.into(),
+            is_dir,
+        });
+    }
+    result.sort_by(|a, b| a.name.cmp(&b.name));
+    result
+}
+
 pub fn write_file(path: &str, data: &[u8]) -> bool {
+    if let Some(member) = archive_member(path) {
+        return write_archive_member(&member, data);
+    }
+    write_direct_file(path, data)
+}
+
+fn write_archive_member(member: &str, data: &[u8]) -> bool {
+    let archive = read_direct_file_candidates(&[FILES_ARCHIVE]);
+    let mut entries = if archive.is_empty() {
+        Vec::new()
+    } else {
+        match parse_archive(&archive) {
+            Some(entries) => entries,
+            None => {
+                log_line_str("VFS: files.tar is invalid; refusing to overwrite it");
+                return false;
+            }
+        }
+    };
+    if let Some(entry) = entries.iter_mut().find(|entry| entry.name == member) {
+        entry.data = data.to_vec();
+    } else {
+        entries.push(ArchiveEntry {
+            name: member.into(),
+            data: data.to_vec(),
+        });
+    }
+    let Some(updated) = build_archive(&entries) else {
+        log_line_str("VFS: cannot encode files.tar member");
+        return false;
+    };
+    write_direct_file(FILES_ARCHIVE, &updated)
+}
+
+fn write_direct_file(path: &str, data: &[u8]) -> bool {
     let ih = uefi::boot::image_handle();
     if let Ok(fs) = uefi::boot::get_image_file_system(ih) {
         if write_to_fs(fs, path, data, true) {
@@ -276,6 +562,20 @@ fn write_to_fs(
 }
 
 pub fn remove_file(path: &str) {
+    if let Some(member) = archive_member(path) {
+        let archive = read_direct_file_candidates(&[FILES_ARCHIVE]);
+        let Some(mut entries) = parse_archive(&archive) else {
+            return;
+        };
+        let original_len = entries.len();
+        entries.retain(|entry| entry.name != member);
+        if entries.len() != original_len {
+            if let Some(updated) = build_archive(&entries) {
+                let _ = write_direct_file(FILES_ARCHIVE, &updated);
+            }
+        }
+        return;
+    }
     let ih = uefi::boot::image_handle();
     if let Ok(mut fs) = uefi::boot::get_image_file_system(ih) {
         if let Ok(mut root) = fs.open_volume() {

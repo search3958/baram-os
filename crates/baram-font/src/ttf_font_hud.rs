@@ -24,7 +24,7 @@ struct GlyphEntry {
 }
 
 pub fn init() {
-    let data = include_bytes!("../../../data/GoogleSansFlex_24pt-Medium.ttf");
+    let data = include_bytes!("../../../files/data/fonts/GoogleSansFlex_24pt-Medium.ttf");
     unsafe {
         FONT_DATA = Some(Vec::from(&data[..]));
         let mut info = stbtt_fontinfo::default();

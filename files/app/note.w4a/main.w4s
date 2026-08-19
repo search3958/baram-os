@@ -1,0 +1,5 @@
+var.set fileContent ()
+WarpUI.text file-content (ここにファイルの内容を表示します。)
+WarpUI.OnClick open-file {
+    BaramOS.uploadFile fileContent (files://data/)
+}

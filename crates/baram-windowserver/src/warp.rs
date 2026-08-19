@@ -391,6 +391,12 @@ impl WarpEngine {
         }
     }
 
+    pub fn set_selected(&mut self, id: &str, selected: bool) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.set_selected(id, selected);
+        }
+    }
+
     pub fn set_candidate_items(&mut self, mode: &str, candidates: &[String]) {
         if let Some(engine) = self.warp4.as_mut() {
             engine.set_text("candidate-mode", mode);
@@ -1659,6 +1665,10 @@ impl WarpEngine {
     }
 
     pub fn set_state_value(&mut self, key: &str, val: &str) {
-        self.set_state(key, val);
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.set_state_value(key, val);
+        } else {
+            self.set_state(key, val);
+        }
     }
 }

@@ -1,0 +1,62 @@
+autostart:
+  - settings.w4a
+
+apps:
+  settings.w4a:
+    icon: settings.png
+    type: warp-4
+    title: 設定
+    tag:
+      - settings
+      - control panel
+  theme.w4a:
+    icon: theme.png
+    type: warp-4
+    title: カスタマイズ
+    tag:
+      - theme
+      - customize
+      - color setting
+  warpdemo.warp:
+    icon: null
+    type: warp-2
+    title: Warp Demo
+  note.w4a:
+    icon: note.png
+    type: warp-4
+    title: プレビュー
+    tag:
+      - note
+      - preview
+      - file
+      - viewer
+  task.w4a:
+    icon: manager.png
+    type: warp-4
+    title: タスクマネージャー
+    tag: task manager
+  calc.w4a:
+    icon: calc.png
+    type: warp-4
+    title: 計算機
+    tag: calc
+  webdemo.html:
+   icon: html5.png
+   type: html-1
+   title: HTMLデモ
+  warp3demo.w3a:
+    icon: warp.png
+    type: warp-3
+    title: Warp 3 デモ
+  wamo.w3a:
+    icon: warp.png
+    type: warp-3
+    title: Warp 3 機能ラボ
+  example.w4a:
+    icon: warp.png
+    type: warp-4
+    title: Warp 4 機能ラボ
+  warp4test.w4a:
+    icon: warp.png
+    type: warp-4
+    title: API1互換XML テスト

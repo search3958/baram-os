@@ -23,13 +23,15 @@ const IME_STATUS_STRIP_W: usize = 160;
 const IME_MENU_W: usize = 210;
 const IME_MENU_H: usize = 264;
 const TASKBAR_STATUS_SIZE: f32 = 32.0;
-const KEYBOARD_ENGLISH_SVG: &str = include_str!("../../../data/keyboard-english.svg");
-const KEYBOARD_JAPANESE_SVG: &str = include_str!("../../../data/keyboard-japanese.svg");
-const KEYBOARD_KP2_SVG: &str = include_str!("../../../data/keyboard-kp2.svg");
-const KEYBOARD_KR2_SVG: &str = include_str!("../../../data/keyboard-kr2.svg");
-const KEYBOARD_KRCOM_SVG: &str = include_str!("../../../data/keyboard-krcom.svg");
-const KEYBOARD_PINYIN_SVG: &str = include_str!("../../../data/keyboard-pinyin.svg");
-const KEYBOARD_ICON_SVG: &str = include_str!("../../../data/keyboard-icon.svg");
+const KEYBOARD_ENGLISH_SVG: &str =
+    include_str!("../../../files/data/keyboard/keyboard-english.svg");
+const KEYBOARD_JAPANESE_SVG: &str =
+    include_str!("../../../files/data/keyboard/keyboard-japanese.svg");
+const KEYBOARD_KP2_SVG: &str = include_str!("../../../files/data/keyboard/keyboard-kp2.svg");
+const KEYBOARD_KR2_SVG: &str = include_str!("../../../files/data/keyboard/keyboard-kr2.svg");
+const KEYBOARD_KRCOM_SVG: &str = include_str!("../../../files/data/keyboard/keyboard-krcom.svg");
+const KEYBOARD_PINYIN_SVG: &str = include_str!("../../../files/data/keyboard/keyboard-pinyin.svg");
+const KEYBOARD_ICON_SVG: &str = include_str!("../../../files/data/keyboard/keyboard-icon.svg");
 
 fn ime_icon_svg(selection: usize) -> &'static str {
     match selection {
@@ -739,7 +741,7 @@ fn get_or_decode_icon(icon_name: &str, size: usize) -> Option<&'static IconBitma
     }
 }
 
-pub const APPS_SVG: &str = include_str!("../../../data/apps.svg");
+pub const APPS_SVG: &str = include_str!("../../../files/data/ui/apps.svg");
 
 pub struct IconBitmap {
     pub pixels: Vec<[u8; 4]>,
@@ -923,9 +925,10 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
     (autostart, apps)
 }
 
-pub const WALLPAPER_baram_PNG: &[u8] = include_bytes!("../../../data/wallpaper/baram.png");
-pub const WALLPAPER_HANUL_PNG: &[u8] = include_bytes!("../../../data/wallpaper/hanul.png");
-pub const WALLPAPER_REFLECT_PNG: &[u8] = include_bytes!("../../../data/wallpaper/reflect.png");
+pub const WALLPAPER_baram_PNG: &[u8] = include_bytes!("../../../files/data/wallpaper/baram.png");
+pub const WALLPAPER_HANUL_PNG: &[u8] = include_bytes!("../../../files/data/wallpaper/hanul.png");
+pub const WALLPAPER_REFLECT_PNG: &[u8] =
+    include_bytes!("../../../files/data/wallpaper/reflect.png");
 pub const WALLPAPERS: &[&[u8]] = &[
     WALLPAPER_baram_PNG,
     WALLPAPER_HANUL_PNG,
@@ -1014,6 +1017,27 @@ fn ease_out_cubic(t: f32) -> f32 {
 fn ease_in_out(t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
+}
+
+/// CSS-style cubic-bezier(.38, .33, .23, 1.0), used by the launcher opening
+/// transition. Solve the x component for the curve parameter, then evaluate y.
+fn ease_launcher_open(t: f32) -> f32 {
+    let x = t.clamp(0.0, 1.0);
+    let mut low = 0.0f32;
+    let mut high = 1.0f32;
+    for _ in 0..14 {
+        let u = (low + high) * 0.5;
+        let inv = 1.0 - u;
+        let curve_x = 3.0 * inv * inv * u * 0.38 + 3.0 * inv * u * u * 0.23 + u * u * u;
+        if curve_x < x {
+            low = u;
+        } else {
+            high = u;
+        }
+    }
+    let u = (low + high) * 0.5;
+    let inv = 1.0 - u;
+    3.0 * inv * inv * u * 0.33 + 3.0 * inv * u * u + u * u * u
 }
 
 fn draw_taskbar_glyph(
@@ -1794,7 +1818,7 @@ pub fn render_scene(
         let panel_radius = 18usize;
         let launcher_alpha = if launcher_anim_phase > 0 {
             let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
-            (ease_in_out(t) * 255.0) as u32
+            (ease_launcher_open(t) * 255.0) as u32
         } else if launcher_anim_phase < 0 {
             let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
             ((1.0 - ease_in_out(t)) * 255.0) as u32
@@ -1805,7 +1829,7 @@ pub fn render_scene(
         // changes this layer's position and global opacity.
         let launcher_offset_y = if launcher_anim_phase > 0 {
             let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
-            ((1.0 - ease_in_out(t)) * 16.0) as usize
+            ((1.0 - ease_launcher_open(t)) * 16.0) as usize
         } else {
             0
         };

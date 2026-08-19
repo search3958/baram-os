@@ -12,7 +12,7 @@ extern crate alloc;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use baram_bsd::{app::Warp4Archive, config};
+use baram_bsd::{app::Warp4Archive, config, vfs};
 use baram_core::{Color, LayerSystem};
 use baram_font::{ttf_font, LayerFontExt};
 use baram_graphics::svg;
@@ -22,7 +22,7 @@ const MAX_NODES: usize = 2048;
 const MAX_ACTIONS: usize = 2048;
 const SWITCH_DURATION_NS: u64 = 220_000_000;
 const RADIO_DURATION_NS: u64 = 180_000_000;
-const CHECK_ICON_SVG: &str = include_str!("../../../data/check-icon.svg");
+const CHECK_ICON_SVG: &str = include_str!("../../../files/data/ui/check-icon.svg");
 const WARP4_INPUT_RADIUS: usize = 11;
 // Warp3 control palette.  Keep Warp4's native controls visually identical to
 // the established Warp3 surface instead of maintaining a second theme.
@@ -742,6 +742,22 @@ impl Warp4Engine {
         }
     }
 
+    pub fn set_selected(&mut self, id: &str, selected: bool) {
+        if let Some(idx) = self.find(id) {
+            set_attr(
+                &mut self.nodes[idx],
+                "selected",
+                if selected { "true" } else { "false" },
+            );
+            self.dirty = true;
+        }
+    }
+
+    pub fn set_state_value(&mut self, key: &str, value: &str) {
+        self.set_state(key, value);
+        self.dirty = true;
+    }
+
     /// Update a pointer-controlled widget while the primary pointer is held.
     /// The caller keeps the window drag state separate from this capture, just
     /// like the browser range/rating controls do.
@@ -1091,6 +1107,21 @@ impl Warp4Engine {
                     config::get_config().get(path).unwrap_or("").to_string()
                 };
                 self.set_state(target.trim(), &current);
+            }
+            "BaramOS.getFile" => {
+                if let Some(path) = vfs::parse_files_uri(&value) {
+                    let content = String::from_utf8_lossy(&vfs::read_file(&path)).into_owned();
+                    self.set_state(target.trim(), &content);
+                }
+            }
+            "BaramOS.uploadFile" => {
+                if is_safe_script_name(target) && vfs::parse_files_uri(&value).is_some() {
+                    self.last_command = Some(format!(
+                        "files-upload://open?var={}&path={}",
+                        target.trim(),
+                        value.trim()
+                    ));
+                }
             }
             "WarpUI.text" => {
                 if let Some(i) = self.find(target) {
@@ -2095,9 +2126,12 @@ impl Warp4Engine {
         if is_button_like(n) {
             let active = self.pressed == Some(idx);
             let hover = self.hovered == Some(idx);
+            let selected = n.attr("selected") == "true";
             let primary = n.is("PrimaryButton");
             let primary_color = if active {
                 Color::rgb(0, 96, 196)
+            } else if selected {
+                Color::rgb(88, 148, 216)
             } else if hover {
                 Color::rgb(0, 112, 232)
             } else {
@@ -2111,6 +2145,8 @@ impl Warp4Engine {
                 w.min(h) / 2,
                 if primary {
                     primary_color
+                } else if selected {
+                    Color::rgb(198, 222, 248)
                 } else if active {
                     Color::rgb(224, 224, 226)
                 } else if hover {
@@ -2988,6 +3024,9 @@ fn parse_command(line: &str) -> Option<Action> {
         });
     }
     if name == "BaramOS" {
+        if let Some(command) = parse_baram_file_command(rest) {
+            return Some(command);
+        }
         let rest = rest.strip_prefix("run").map(str::trim).unwrap_or(rest);
         let value = rest.trim_start_matches('=').trim();
         if value.starts_with('(') {
@@ -3021,6 +3060,32 @@ fn parse_command(line: &str) -> Option<Action> {
         value,
     })
 }
+
+fn parse_baram_file_command(rest: &str) -> Option<Action> {
+    let (operation, args) = rest.split_once(char::is_whitespace)?;
+    if operation != "getFile" && operation != "uploadFile" {
+        return None;
+    }
+    let args = args.trim();
+    let (target, value) = args.split_once(char::is_whitespace)?;
+    let target = target.trim();
+    let remainder = value.trim();
+    let open = remainder.find('(')?;
+    let (value, _) = balanced(remainder, open)?;
+    Some(Action::Command {
+        name: format!("BaramOS.{operation}"),
+        target: target.into(),
+        value,
+    })
+}
+
+fn is_safe_script_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
 fn balanced(s: &str, open: usize) -> Option<(String, usize)> {
     let mut depth = 0;
     for (i, c) in s.char_indices().skip(open) {

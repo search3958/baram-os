@@ -2439,7 +2439,7 @@ mod tests {
 
     #[test]
     fn parses_the_reference_ui_without_preprocessing() {
-        let nodes = Parser::new(include_str!("../../../app/warp3demo.w3a/main.w3u")).parse();
+        let nodes = Parser::new(include_str!("../../../files/app/warp3demo.w3a/main.w3u")).parse();
         assert!(nodes.len() > 100);
         assert!(nodes.iter().any(|node| node.is("toolbar")));
         assert!(nodes.iter().any(|node| node.is("tab")));
@@ -2452,7 +2452,7 @@ mod tests {
 
     #[test]
     fn parses_the_task_manager_w3a_ui() {
-        let nodes = Parser::new(include_str!("../../../app/task.w3a/main.w3u")).parse();
+        let nodes = Parser::new(include_str!("../../../files/app/task.w3a/main.w3u")).parse();
         assert!(nodes.iter().any(|node| {
             node.is("button") && node.classes.iter().any(|class| class == "refresh-values")
         }));
@@ -2464,22 +2464,26 @@ mod tests {
     #[test]
     fn parses_the_converted_warp3_apps() {
         for source in [
-            include_str!("../../../app/calc.w3a/main.w3u"),
-            include_str!("../../../app/mousekeydialog.w3a/main.w3u"),
-            include_str!("../../../app/settings.w3a/main.w3u"),
-            include_str!("../../../app/settings.w3a/theme.w3u"),
-            include_str!("../../../app/settings.w3a/pointer.w3u"),
-            include_str!("../../../app/settings.w3a/hud.w3u"),
-            include_str!("../../../app/settings.w3a/system.w3u"),
-            include_str!("../../../app/theme.w3a/main.w3u"),
-            include_str!("../../../app/ospermission.w3a/main.w3u"),
+            include_str!("../../../files/app/calc.w3a/main.w3u"),
+            include_str!("../../../files/app/mousekeydialog.w3a/main.w3u"),
+            include_str!("../../../files/app/settings.w3a/main.w3u"),
+            include_str!("../../../files/app/settings.w3a/theme.w3u"),
+            include_str!("../../../files/app/settings.w3a/pointer.w3u"),
+            include_str!("../../../files/app/settings.w3a/hud.w3u"),
+            include_str!("../../../files/app/settings.w3a/system.w3u"),
+            include_str!("../../../files/app/theme.w3a/main.w3u"),
+            include_str!("../../../files/app/ospermission.w3a/main.w3u"),
         ] {
             assert!(!Parser::new(source).parse().is_empty());
         }
-        assert!(!parse_script(include_str!("../../../app/calc.w3a/calc.w3s")).is_empty());
-        assert!(!parse_script(include_str!("../../../app/settings.w3a/settings.w3s")).is_empty());
-        assert!(!parse_script(include_str!("../../../app/theme.w3a/theme.w3s")).is_empty());
-        let permission = parse_script(include_str!("../../../app/ospermission.w3a/permission.w3s"));
+        assert!(!parse_script(include_str!("../../../files/app/calc.w3a/calc.w3s")).is_empty());
+        assert!(
+            !parse_script(include_str!("../../../files/app/settings.w3a/settings.w3s")).is_empty()
+        );
+        assert!(!parse_script(include_str!("../../../files/app/theme.w3a/theme.w3s")).is_empty());
+        let permission = parse_script(include_str!(
+            "../../../files/app/ospermission.w3a/permission.w3s"
+        ));
         assert!(permission.iter().any(|section| {
             section.name == "permission-always"
                 && section
@@ -2530,8 +2534,10 @@ mod tests {
 
     #[test]
     fn parses_reference_script_commands_and_functions() {
-        let nav = parse_script(include_str!("../../../app/warp3demo.w3a/nav.w3s"));
-        let variables = parse_script(include_str!("../../../app/warp3demo.w3a/var-demo.w3s"));
+        let nav = parse_script(include_str!("../../../files/app/warp3demo.w3a/nav.w3s"));
+        let variables = parse_script(include_str!(
+            "../../../files/app/warp3demo.w3a/var-demo.w3s"
+        ));
         assert!(nav.iter().any(|section| {
             section.kind == SectionKind::Click
                 && section.name == "vardemo"
