@@ -142,7 +142,7 @@ build_xiao() {
     # Xiao uses the smallest known-good guest size. Keep an explicit
     # QEMU_RAM override available for diagnostics and future hardware.
     if [ "$QEMU_RAM_WAS_SET" -eq 0 ]; then
-        QEMU_RAM="64M"
+        QEMU_RAM="28M"
     fi
     local xiao_target="$SCRIPT_DIR/target/aarch64-unknown-uefi/release/xiao.efi"
     local xiao_efi="$TARGET_DIR/bootaa64-xiao.efi"

@@ -1,6 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-
-<ScrollView xmlns:baram="http://schemas.baram.com/apk/res/baram" baram:layout_width="fill_parent" baram:layout_height="fill_parent" baram:fillViewport="false">
 <LinearLayout
     xmlns:baram="http://schemas.baram.com/apk/res/baram"
     baram:layout_width="fill_parent"
@@ -1022,4 +1020,3 @@
     </LinearLayout>
 
 </LinearLayout>
-</ScrollView>

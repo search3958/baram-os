@@ -271,6 +271,9 @@ pub fn run(mut nano: NanoSystem) -> Status {
                     if was_down {
                         list.click(x, document_y);
                         display_changed = true;
+                    } else if list.has_pressed() {
+                        list.release();
+                        display_changed = true;
                     }
                     display_changed |= list.set_hover_changed(x, document_y);
                     display_changed |= list.pointer_move(x, y);
@@ -319,7 +322,7 @@ pub fn run(mut nano: NanoSystem) -> Status {
                 if down {
                     engine.click(x, document_y);
                     display_changed = true;
-                } else if engine.has_pointer_capture() {
+                } else if engine.has_pressed() {
                     engine.release();
                     display_changed = true;
                 }

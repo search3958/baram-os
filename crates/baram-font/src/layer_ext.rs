@@ -19,8 +19,9 @@ impl LayerFontExt for LayerSystem {
             let (clip_x0, clip_y0, clip_x1, clip_y1) = self.clip_bounds();
             let buf = self.buf_mut();
             if bdf_font::with_glyph(ch, |data, gw, gh, _advance, y_off| {
+                let top = bdf_font::top_offset(gh, y_off);
                 for row in 0..gh {
-                    let py = y as i32 + y_off + row;
+                    let py = y as i32 + top + row;
                     if py < clip_y0 as i32 || py >= clip_y1 as i32 { continue; }
                     for col in 0..gw {
                         let px = x as i32 + col;

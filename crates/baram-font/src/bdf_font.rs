@@ -62,6 +62,14 @@ pub fn is_available() -> bool {
     !matches!(unsafe { SOURCE }, FontSource::None)
 }
 
+/// Convert a BDF glyph's baseline-relative BBX into a top offset inside the
+/// font's 8-pixel line box.  Misaki's global metrics are FONT_ASCENT=7 and
+/// FONT_DESCENT=1, so a glyph with `BBX h 0 0` starts at the line top while
+/// descenders naturally occupy the final pixels of the line.
+pub fn top_offset(height: i32, y_off: i32) -> i32 {
+    7 - (y_off + height)
+}
+
 /// Prime the small glyph cache for text that may be shown next. The BDF file
 /// remains on storage; only the individual bitmap glyphs are retained.
 pub fn preload_text(text: &str) {

@@ -468,7 +468,7 @@ pub struct Warp4Engine {
     scroll: i32,
     scroll_target: i32,
     scroll_start: i32,
-    scroll_started_ns: Option<u64>,
+    scroll_elapsed_ns: u64,
     pub content_height: i32,
     pub last_command: Option<String>,
     dirty: bool,
@@ -521,7 +521,7 @@ impl Warp4Engine {
             scroll: 0,
             scroll_target: 0,
             scroll_start: 0,
-            scroll_started_ns: None,
+            scroll_elapsed_ns: 0,
             content_height: 0,
             last_command: None,
             dirty: true,
@@ -572,7 +572,7 @@ impl Warp4Engine {
             self.scroll = 0;
             self.scroll_target = 0;
             self.scroll_start = 0;
-            self.scroll_started_ns = None;
+            self.scroll_elapsed_ns = 0;
             self.dirty = true;
             self.layout_dirty = true;
         }
@@ -592,7 +592,7 @@ impl Warp4Engine {
             let changed = self.scroll_target != next || self.scroll != next;
             if self.scroll_target != next {
                 self.scroll_start = self.scroll;
-                self.scroll_started_ns = None;
+                self.scroll_elapsed_ns = 0;
                 self.scroll_target = next;
             }
             if changed {
@@ -606,7 +606,7 @@ impl Warp4Engine {
             self.scroll = next;
             self.scroll_target = next;
             self.scroll_start = next;
-            self.scroll_started_ns = None;
+            self.scroll_elapsed_ns = 0;
             if let Some(idx) = self.spinner_open {
                 self.close_spinner(idx);
             }
@@ -685,11 +685,16 @@ impl Warp4Engine {
 
         let mut changed = false;
         if is_xiao() && self.scroll != self.scroll_target {
-            let started = *self
-                .scroll_started_ns
-                .get_or_insert(now_ns.saturating_sub(16_000_000));
-            let elapsed = now_ns.saturating_sub(started);
-            let t = (elapsed as f32 / XIAO_SCROLL_ANIMATION_NS as f32).clamp(0.0, 1.0);
+            // Advance from the timer delta instead of reading the firmware
+            // wall clock. Some UEFI implementations expose a coarse or
+            // occasionally unchanged nanosecond field, which made a small
+            // scroll animation stop at its first frame even though redraws
+            // continued normally.
+            self.scroll_elapsed_ns = self
+                .scroll_elapsed_ns
+                .saturating_add(delta.max(1_000_000));
+            let t = (self.scroll_elapsed_ns as f32 / XIAO_SCROLL_ANIMATION_NS as f32)
+                .clamp(0.0, 1.0);
             let remaining = 1.0 - t;
             let eased = 1.0 - remaining * remaining * remaining;
             let distance = self.scroll_target - self.scroll_start;
@@ -705,7 +710,7 @@ impl Warp4Engine {
             }
             if t >= 1.0 {
                 self.scroll_start = self.scroll_target;
-                self.scroll_started_ns = None;
+                self.scroll_elapsed_ns = 0;
             }
         }
         let mut flip_interval_ns: Option<u64> = None;
@@ -835,7 +840,7 @@ impl Warp4Engine {
         self.scroll = 0;
         self.scroll_target = 0;
         self.scroll_start = 0;
-        self.scroll_started_ns = None;
+        self.scroll_elapsed_ns = 0;
         self.wait_until_ns = None;
         self.pending.clear();
         let mut layout = self.archive.read_text(&format!("{}.w4u", self.screen));
@@ -1231,6 +1236,10 @@ impl Warp4Engine {
                 .get(idx)
                 .is_some_and(|n| n.is("SeekBar") || n.is("RatingBar"))
         })
+    }
+
+    pub fn has_pressed(&self) -> bool {
+        self.pressed.is_some()
     }
 
     pub fn release(&mut self) {
