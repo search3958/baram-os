@@ -11,6 +11,6 @@ path = "src/main.rs"
 baram-bsd = { path = "../baram-bsd", default-features = false }
 baram-core = { path = "../baram-core" }
 baram-font = { path = "../baram-font", default-features = false, features = ["bdf"] }
-baram-warp4 = { path = "../baram-warp4", default-features = false, features = ["bdf"] }
+baram-warp4 = { path = "../baram-warp4", default-features = false, features = ["bdf", "xiao"] }
 nano-system = { path = "../nano-system" }
 uefi = { workspace = true }

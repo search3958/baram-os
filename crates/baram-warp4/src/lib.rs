@@ -18,7 +18,7 @@ use baram_font::{bdf_font, LayerFontExt};
 use core::sync::atomic::{AtomicU32, Ordering};
 #[cfg(feature = "ttf")]
 use baram_font::ttf_font;
-#[cfg(not(feature = "bdf"))]
+#[cfg(not(feature = "xiao"))]
 use baram_graphics::svg;
 use uefi::runtime;
 
@@ -26,23 +26,59 @@ const MAX_NODES: usize = 2048;
 const MAX_ACTIONS: usize = 2048;
 const SWITCH_DURATION_NS: u64 = 220_000_000;
 const RADIO_DURATION_NS: u64 = 180_000_000;
-#[cfg(not(feature = "bdf"))]
+#[cfg(not(feature = "xiao"))]
 const CHECK_ICON_SVG: &str = include_str!("../../../files/data/ui/check-icon.svg");
 const WARP4_INPUT_RADIUS: usize = 11;
 // Warp3 control palette.  Keep Warp4's native controls visually identical to
 // the established Warp3 surface instead of maintaining a second theme.
+#[cfg(not(feature = "xiao"))]
 const WARP3_BG: Color = Color::rgb(243, 243, 243);
+#[cfg(not(feature = "xiao"))]
 const WARP3_SURFACE: Color = Color::rgb(251, 251, 251);
+#[cfg(not(feature = "xiao"))]
 const WARP3_TEXT: Color = Color::rgb(26, 26, 26);
+#[cfg(not(feature = "xiao"))]
 const WARP3_MUTED: Color = Color::rgb(93, 93, 93);
+#[cfg(not(feature = "xiao"))]
 const WARP3_BORDER: Color = Color::rgb(211, 211, 211);
+#[cfg(not(feature = "xiao"))]
 const WARP3_ACCENT: Color = Color::rgb(0, 106, 255);
+#[cfg(not(feature = "xiao"))]
 const WARP4_BG: Color = Color::rgb(250, 250, 252);
+#[cfg(not(feature = "xiao"))]
 const WARP4_PRIMARY: Color = Color::rgb(0, 106, 255);
+#[cfg(not(feature = "xiao"))]
 const WARP4_BUTTON_BG: Color = Color::rgb(238, 238, 239);
+#[cfg(not(feature = "xiao"))]
 const WARP4_INPUT_BG: Color = Color::rgb(255, 255, 255);
+#[cfg(not(feature = "xiao"))]
 const WARP4_INPUT_BORDER: Color = Color::rgb(242, 242, 246);
+#[cfg(not(feature = "xiao"))]
 const WARP4_RADIO_OFF: Color = Color::rgb(231, 230, 230);
+#[cfg(feature = "xiao")]
+const WARP3_BG: Color = Color::rgb(0xC0, 0xC0, 0xC0);
+#[cfg(feature = "xiao")]
+const WARP3_SURFACE: Color = Color::rgb(0xF5, 0xF5, 0xF5);
+#[cfg(feature = "xiao")]
+const WARP3_TEXT: Color = Color::rgb(0x00, 0x00, 0x00);
+#[cfg(feature = "xiao")]
+const WARP3_MUTED: Color = Color::rgb(0x40, 0x40, 0x40);
+#[cfg(feature = "xiao")]
+const WARP3_BORDER: Color = Color::rgb(0x00, 0x00, 0x00);
+#[cfg(feature = "xiao")]
+const WARP3_ACCENT: Color = Color::rgb(0x00, 0x00, 0x80);
+#[cfg(feature = "xiao")]
+const WARP4_BG: Color = Color::rgb(0xD0, 0xD0, 0xD0);
+#[cfg(feature = "xiao")]
+const WARP4_PRIMARY: Color = Color::rgb(0x00, 0x00, 0x80);
+#[cfg(feature = "xiao")]
+const WARP4_BUTTON_BG: Color = Color::rgb(0xD8, 0xD8, 0xD8);
+#[cfg(feature = "xiao")]
+const WARP4_INPUT_BG: Color = Color::rgb(0xFF, 0xFF, 0xFF);
+#[cfg(feature = "xiao")]
+const WARP4_INPUT_BORDER: Color = Color::rgb(0x00, 0x00, 0x00);
+#[cfg(feature = "xiao")]
+const WARP4_RADIO_OFF: Color = Color::rgb(0xC0, 0xC0, 0xC0);
 const WARP4_WHITE: Color = Color::rgb(255, 255, 255);
 const WARP4_BLACK: Color = Color::rgb(0, 0, 0);
 const SCROLLBAR_TRACK: Color = Color::rgb(241, 241, 241);
@@ -53,7 +89,7 @@ const SCROLLBAR_RADIUS: usize = 3;
 // pixel-snapped control language: no squircle geometry, coverage sampling,
 // alpha edges, or blurred shadows.  The normal TTF build keeps the existing
 // smooth renderer unchanged.
-#[cfg(feature = "bdf")]
+#[cfg(feature = "xiao")]
 fn fill_ui_rounded_rect(
     layer: &mut LayerSystem,
     x: usize,
@@ -82,7 +118,7 @@ fn fill_ui_rounded_rect(
     }
 }
 
-#[cfg(not(feature = "bdf"))]
+#[cfg(not(feature = "xiao"))]
 fn fill_ui_rounded_rect(
     layer: &mut LayerSystem,
     x: usize,
@@ -95,7 +131,7 @@ fn fill_ui_rounded_rect(
     layer.fill_rounded_rect(x, y, w, h, radius, color);
 }
 
-#[cfg(feature = "bdf")]
+#[cfg(feature = "xiao")]
 fn outline_ui_rounded_rect(
     layer: &mut LayerSystem,
     x: usize,
@@ -120,7 +156,7 @@ fn outline_ui_rounded_rect(
     }
 }
 
-#[cfg(not(feature = "bdf"))]
+#[cfg(not(feature = "xiao"))]
 fn outline_ui_rounded_rect(
     layer: &mut LayerSystem,
     x: usize,
@@ -134,7 +170,7 @@ fn outline_ui_rounded_rect(
     layer.rounded_rect_outline(x, y, w, h, radius, border, fill);
 }
 
-#[cfg(feature = "bdf")]
+#[cfg(feature = "xiao")]
 fn fill_ui_circle(layer: &mut LayerSystem, cx: usize, cy: usize, radius: usize, color: Color) {
     let radius = radius.max(1) as i32;
     let center_x = cx as i32;
@@ -150,9 +186,123 @@ fn fill_ui_circle(layer: &mut LayerSystem, cx: usize, cy: usize, radius: usize, 
     }
 }
 
-#[cfg(not(feature = "bdf"))]
+#[cfg(not(feature = "xiao"))]
 fn fill_ui_circle(layer: &mut LayerSystem, cx: usize, cy: usize, radius: usize, color: Color) {
     layer.fill_circle(cx, cy, radius, color);
+}
+
+#[cfg(feature = "xiao")]
+fn draw_ui_button(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+    radius: usize,
+    color: Color,
+    pressed: bool,
+) {
+    // System 7/Platinum-style bevel: flat gray face, black frame, and
+    // one-pixel light/dark edges. Everything is integer-pixel only.
+    fill_ui_rounded_rect(layer, x, y, w, h, radius.min(2), color);
+    layer.rect_outline(x, y, w, h, WARP3_BORDER);
+    if w > 2 && h > 2 {
+        let light = if pressed {
+            Color::rgb(0x60, 0x60, 0x60)
+        } else {
+            Color::rgb(0xFF, 0xFF, 0xFF)
+        };
+        let dark = if pressed {
+            Color::rgb(0xFF, 0xFF, 0xFF)
+        } else {
+            Color::rgb(0x70, 0x70, 0x70)
+        };
+        layer.fill_rect(x + 1, y + 1, w - 2, 1, light);
+        layer.fill_rect(x + 1, y + h - 2, w - 2, 1, dark);
+        layer.fill_rect(x + 1, y + 1, 1, h - 2, light);
+        layer.fill_rect(x + w - 2, y + 1, 1, h - 2, dark);
+    }
+}
+
+#[cfg(not(feature = "xiao"))]
+fn draw_ui_button(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+    radius: usize,
+    color: Color,
+    _pressed: bool,
+) {
+    layer.fill_rounded_rect(x, y, w, h, radius, color);
+}
+
+#[cfg(feature = "xiao")]
+fn ui_button_face(active: bool, selected: bool, hover: bool, _primary: bool) -> Color {
+    if active {
+        Color::rgb(0xA0, 0xA0, 0xA0)
+    } else if selected {
+        Color::rgb(0xB0, 0xB0, 0xB0)
+    } else if hover {
+        Color::rgb(0xE8, 0xE8, 0xE8)
+    } else {
+        WARP4_BUTTON_BG
+    }
+}
+
+#[cfg(not(feature = "xiao"))]
+fn ui_button_face(active: bool, selected: bool, hover: bool, primary: bool) -> Color {
+    let primary_color = if active {
+        Color::rgb(0, 96, 196)
+    } else if selected {
+        Color::rgb(88, 148, 216)
+    } else if hover {
+        Color::rgb(0, 112, 232)
+    } else {
+        WARP4_PRIMARY
+    };
+    if primary {
+        primary_color
+    } else if selected {
+        Color::rgb(198, 222, 248)
+    } else if active {
+        Color::rgb(224, 224, 226)
+    } else if hover {
+        Color::rgb(244, 244, 245)
+    } else {
+        WARP4_BUTTON_BG
+    }
+}
+
+#[cfg(feature = "xiao")]
+fn draw_ui_switch(layer: &mut LayerSystem, x: i32, y: i32, h: i32, on: bool) {
+    let track_w = ui_px_usize(40).max(12);
+    let track_h = ui_px_usize(20).max(8);
+    let sy = (y + (h - track_h as i32).max(0) / 2).max(0) as usize;
+    outline_ui_rounded_rect(
+        layer,
+        x.max(0) as usize,
+        sy,
+        track_w,
+        track_h,
+        ui_px_usize(1),
+        WARP3_BORDER,
+        WARP3_SURFACE,
+    );
+    let knob_w = track_w.saturating_sub(6).min(ui_px_usize(16).max(6));
+    let knob_x = if on {
+        x.max(0) as usize + track_w.saturating_sub(knob_w + 3)
+    } else {
+        x.max(0) as usize + 3
+    };
+    layer.fill_rect(
+        knob_x,
+        sy + 3,
+        knob_w,
+        track_h.saturating_sub(6).max(1),
+        if on { WARP3_ACCENT } else { Color::rgb(0x80, 0x80, 0x80) },
+    );
 }
 
 // Warp4 is shared by the normal and Xiao images.  Keep the scale as explicit
@@ -2278,33 +2428,15 @@ impl Warp4Engine {
             let hover = self.hovered == Some(idx);
             let selected = n.attr("selected") == "true";
             let primary = n.is("PrimaryButton");
-            let primary_color = if active {
-                Color::rgb(0, 96, 196)
-            } else if selected {
-                Color::rgb(88, 148, 216)
-            } else if hover {
-                Color::rgb(0, 112, 232)
-            } else {
-                WARP4_PRIMARY
-            };
-            fill_ui_rounded_rect(
+            draw_ui_button(
                 layer,
                 x.max(0) as usize,
                 y.max(0) as usize,
                 w,
                 h,
                 w.min(h) / 2,
-                if primary {
-                    primary_color
-                } else if selected {
-                    Color::rgb(198, 222, 248)
-                } else if active {
-                    Color::rgb(224, 224, 226)
-                } else if hover {
-                    Color::rgb(244, 244, 245)
-                } else {
-                    WARP4_BUTTON_BG
-                },
+                ui_button_face(active, selected, hover, primary),
+                active,
             );
         } else if n.is("EditText")
             || n.is("AutoCompleteTextView")
@@ -2376,6 +2508,12 @@ impl Warp4Engine {
                 }
             }
         } else if n.is("Switch") {
+            #[cfg(feature = "xiao")]
+            {
+                draw_ui_switch(layer, x, y, n.h, n.attr("checked") == "true");
+            }
+            #[cfg(not(feature = "xiao"))]
+            {
             let on = n.attr("checked") == "true";
             let amount = self.control_amount(idx, on);
             let track = mix_color(WARP3_BG, WARP3_ACCENT, amount);
@@ -2403,6 +2541,7 @@ impl Warp4Engine {
                 ui_px_usize(7),
                 mix_color(Color::rgb(102, 102, 102), Color::rgb(255, 255, 255), amount),
             );
+            }
         } else if n.is("Spinner") || n.is("SearchView") {
             layer.fill_rect(
                 x.max(0) as usize,
@@ -2747,7 +2886,7 @@ impl Warp4Engine {
         let (x, y, w, h) = self.spinner_popup_rect(idx);
         let popup_w = w.max(1) as usize;
         let popup_h = h.max(1) as usize;
-        #[cfg(feature = "bdf")]
+        #[cfg(feature = "xiao")]
         {
             let _ = opacity;
             self.paint_spinner_popup_content(
@@ -2760,7 +2899,7 @@ impl Warp4Engine {
             );
             return;
         }
-        #[cfg(not(feature = "bdf"))]
+        #[cfg(not(feature = "xiao"))]
         {
         let radius = ui_px_usize(8);
         let shadow_pad = ui_px_usize(16);
@@ -3641,9 +3780,15 @@ fn text_color(n: &Node) -> Color {
     if let Some(color) = parse_color(n.attr("textColor")) {
         return color;
     }
+    #[cfg(feature = "xiao")]
+    if n.is("PrimaryButton") || n.is("Button") {
+        return WARP3_TEXT;
+    }
+    #[cfg(not(feature = "xiao"))]
     if n.is("PrimaryButton") {
         return WARP4_WHITE;
     }
+    #[cfg(not(feature = "xiao"))]
     if n.is("Button") {
         return WARP4_PRIMARY;
     }
@@ -3673,7 +3818,7 @@ fn mix_color(from: Color, to: Color, amount: f32) -> Color {
     )
 }
 
-#[cfg(feature = "bdf")]
+#[cfg(feature = "xiao")]
 fn draw_spinner_shadow(
     _layer: &mut LayerSystem,
     _x: usize,
@@ -3685,7 +3830,7 @@ fn draw_spinner_shadow(
     // Xiao deliberately has no translucent or blurred control shadows.
 }
 
-#[cfg(not(feature = "bdf"))]
+#[cfg(not(feature = "xiao"))]
 fn draw_spinner_shadow(
     layer: &mut LayerSystem,
     x: usize,
@@ -3729,7 +3874,7 @@ fn draw_spinner_shadow(
     }
 }
 
-#[cfg(not(feature = "bdf"))]
+#[cfg(not(feature = "xiao"))]
 fn blur_shadow_alpha(alpha: &mut [u8], width: usize, height: usize, radius: usize) {
     if width == 0 || height == 0 || radius == 0 {
         return;
@@ -3817,7 +3962,7 @@ fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: 
     }
 }
 
-#[cfg(feature = "bdf")]
+#[cfg(feature = "xiao")]
 fn draw_check_icon(layer: &mut LayerSystem, x: i32, y: i32) {
     // A two-segment, pixel-snapped check mark.  The BDF/Xiao path never
     // rasterizes the SVG mask, so no fractional alpha reaches the framebuffer.
@@ -3843,7 +3988,7 @@ fn draw_check_icon(layer: &mut LayerSystem, x: i32, y: i32) {
     }
 }
 
-#[cfg(not(feature = "bdf"))]
+#[cfg(not(feature = "xiao"))]
 fn draw_check_icon(layer: &mut LayerSystem, x: i32, y: i32) {
     // Use the shared SVG asset as a mask, then tint it white for the checked
     // state.  The source asset is black because it is also usable on light
