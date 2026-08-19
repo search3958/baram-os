@@ -50,9 +50,12 @@ TARGET_DIR="$SCRIPT_DIR/target/aarch64-unknown-uefi/release"
 # QEMU defaults — override via env vars if desired.
 QEMU_MACHINE="${QEMU_MACHINE:-virt}"
 QEMU_CPU="${QEMU_CPU:-cortex-a72}"
+QEMU_RAM_WAS_SET=0
+if [ "${QEMU_RAM+x}" = x ]; then
+    QEMU_RAM_WAS_SET=1
+fi
 QEMU_RAM="${QEMU_RAM:-0.15G}"
 QEMU_DISPLAY="${QEMU_DISPLAY:-default}"
-QEMU_ZOOM_TO_FIT="${QEMU_ZOOM_TO_FIT:-1}"
 # Where the firmware/OS serial output goes.  Default is `stdio` so you can
 # see boot logs in the terminal.  Use `null` to silence serial.
 QEMU_SERIAL="${QEMU_SERIAL:-stdio}"
@@ -136,9 +139,11 @@ build_efi() {
 build_xiao() {
     XIAO_MODE=1
     FIRMWARE_PATH="$XIAO_FIRMWARE_PATH"
-    # Xiao is intentionally constrained to 0.1 GiB. The bundled BaramOS UEFI
-    # firmware is patched to initialize GOP below the upstream 128 MiB floor.
-    QEMU_RAM="${QEMU_RAM:-24M}"
+    # Xiao uses the smallest known-good guest size. Keep an explicit
+    # QEMU_RAM override available for diagnostics and future hardware.
+    if [ "$QEMU_RAM_WAS_SET" -eq 0 ]; then
+        QEMU_RAM="64M"
+    fi
     local xiao_target="$SCRIPT_DIR/target/aarch64-unknown-uefi/release/xiao.efi"
     local xiao_efi="$TARGET_DIR/bootaa64-xiao.efi"
     log "Building ARM64 Xiao kiosk system ..."
@@ -454,9 +459,7 @@ Install QEMU:
     #   -m 1G                    : 1 GiB RAM
     #   -bios                    : BaramOS UEFI firmware with no 128 MiB floor
     #   -drive ...,format=raw    : FAT image as removable media (bootable)
-    #   -device ramfb            : simple firmware framebuffer (works on every QEMU build)
-    #                              alternative: -device virtio-gpu-device (better resolution,
-    #                              needs virtio-gpu driver in firmware)
+    #   -device ramfb            : BaramOS firmware framebuffer
     #   -device qemu-xhci        : USB 3.0 host controller (required for usb-kbd / usb-mouse)
     #   -device usb-tablet       : USB absolute pointing device (exposed by UEFI as the
     #                              EFI Absolute Pointer Protocol — best mouse support)
@@ -472,7 +475,6 @@ Install QEMU:
     #   QEMU_EXTRA_ARGS          : extra args appended verbatim to the QEMU command line
     #   QEMU_SERIAL              : where serial console goes ('stdio', 'null', 'file:PATH')
     #   QEMU_MONITOR             : where HMP monitor goes ('none', 'stdio')
-    #   QEMU_ZOOM_TO_FIT        : set to 0 to disable automatic display fitting
     #   XIAO_ICOUNT=1            : opt into slow instruction-count timing for Xiao
     #                              (disabled by default so pointer input stays responsive)
     local extra_args=()
@@ -492,27 +494,7 @@ Install QEMU:
         extra_args+=(-icount "shift=1,align=on")
     fi
 
-    local display_arg="$QEMU_DISPLAY"
-    if [ "$QEMU_ZOOM_TO_FIT" = "1" ] && [ "$QEMU_DISPLAY" != "none" ]; then
-        case "$QEMU_DISPLAY" in
-            default)
-                # QEMU's generic `default` frontend does not accept the
-                # option directly. Select the native frontend explicitly so
-                # zoom-to-fit is applied to the host window.
-                if [ "$OS" = "Darwin" ]; then
-                    display_arg="cocoa,zoom-to-fit=on"
-                else
-                    display_arg="gtk,zoom-to-fit=on"
-                fi
-                ;;
-            *,zoom-to-fit=*)
-                ;;
-            *)
-                display_arg="$QEMU_DISPLAY,zoom-to-fit=on"
-                ;;
-        esac
-    fi
-    log "  display : $display_arg"
+    log "  display : $QEMU_DISPLAY"
 
     exec "$qemu" \
         "${extra_args[@]}" \
@@ -527,7 +509,7 @@ Install QEMU:
         -device "usb-tablet" \
         -device "usb-mouse" \
         -device "usb-kbd" \
-        -display "$display_arg" \
+        -display "$QEMU_DISPLAY" \
         -serial "$QEMU_SERIAL" \
         -monitor "$QEMU_MONITOR"
 }

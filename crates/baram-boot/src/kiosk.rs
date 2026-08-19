@@ -95,40 +95,46 @@ fn pointer_xy(event: NanoBasicPointerEvent, nano: &NanoSystem, x: &mut i32, y: &
 const CURSOR_W: i32 = 12;
 const CURSOR_H: i32 = 17;
 
-fn cursor_pixel(screen: &mut Screen, x: i32, y: i32, color: Color) {
-    if x >= 0 && y >= 0 {
-        screen.put_pixel(x as usize, y as usize, color);
+fn cursor_overlay_pixel(row: usize, col: usize) -> Option<Color> {
+    let mut color = None;
+    for shape_row in 0..15usize {
+        let width = if shape_row < 10 { shape_row / 2 + 1 } else { 2 };
+        if row >= shape_row && row < shape_row + 2 && col < width + 2 {
+            color = Some(Color::BLACK);
+        }
+        if row == shape_row && width > 1 && col >= 1 && col < width {
+            color = Some(Color::rgb(255, 255, 255));
+        }
     }
+    if (10..15).contains(&row) && (3..7).contains(&col) {
+        color = Some(Color::BLACK);
+    }
+    if (10..14).contains(&row) && (4..6).contains(&col) {
+        color = Some(Color::rgb(255, 255, 255));
+    }
+    color
 }
 
-fn draw_cursor(screen: &mut Screen, x: i32, y: i32) {
+fn draw_cursor(screen: &mut Screen, layer: &LayerSystem, x: i32, y: i32) {
     // The cursor is an independent screen overlay. It must not dirty the
     // backing layer, otherwise a pointer move would force a full UI flush.
     let x = x.max(0);
     let y = y.max(0);
-    const WHITE: Color = Color::rgb(255, 255, 255);
-    for row in 0..15usize {
-        let width = if row < 10 { row / 2 + 1 } else { 2 };
-        for dy in 0..2 {
-            for dx in 0..width + 2 {
-                cursor_pixel(screen, x + dx as i32, y + row as i32 + dy, Color::BLACK);
+    for row in 0..CURSOR_H as usize {
+        let sy = y as usize + row;
+        if sy >= layer.height() || x as usize >= layer.width() {
+            continue;
+        }
+        let width = (CURSOR_W as usize).min(layer.width() - x as usize);
+        let mut pixels = [Color::BLACK.0; CURSOR_W as usize];
+        let start = sy * layer.width() + x as usize;
+        pixels[..width].copy_from_slice(&layer.buf_ref()[start..start + width]);
+        for col in 0..width {
+            if let Some(color) = cursor_overlay_pixel(row, col) {
+                pixels[col] = color.0;
             }
         }
-        if width > 1 {
-            for dx in 0..width - 1 {
-                cursor_pixel(screen, x + 1 + dx as i32, y + row as i32, WHITE);
-            }
-        }
-    }
-    for dy in 0..5 {
-        for dx in 0..4 {
-            cursor_pixel(screen, x + 3 + dx, y + 10 + dy, Color::BLACK);
-        }
-    }
-    for dy in 0..4 {
-        for dx in 0..2 {
-            cursor_pixel(screen, x + 4 + dx, y + 10 + dy, WHITE);
-        }
+        screen.flush_layer_row_range(sy, x as usize, &pixels[..width]);
     }
 }
 
@@ -156,8 +162,8 @@ pub fn run(mut nano: NanoSystem) -> Status {
     // only glyphs used by the current display while painting.
     baram_font::bdf_font::init_file("\\EFI\\BOOT\\MISAKI_GOTHIC_2ND.BDF");
     baram_font::bdf_font::clear_cache();
-    // Xiao uses a 320x180 working surface: exactly half the previous 640x360
-    // target. Warp4 uses the same compact metrics for this kiosk only.
+    // Xiao uses the firmware's native 128x64 GOP mode. Warp4 uses the same
+    // compact metrics for this kiosk only.
     let mut screen = match Screen::take_with_target(nano.display.width, nano.display.height) {
         Ok(s) => s,
         Err(_) => return Status::UNSUPPORTED,
@@ -264,11 +270,11 @@ pub fn run(mut nano: NanoSystem) -> Status {
             }
         }
         if !cursor_drawn {
-            draw_cursor(&mut screen, x, y);
+            draw_cursor(&mut screen, &layer, x, y);
             cursor_drawn = true;
         } else if cursor_x != x || cursor_y != y {
             restore_cursor_background(&mut screen, &layer, cursor_x, cursor_y);
-            draw_cursor(&mut screen, x, y);
+            draw_cursor(&mut screen, &layer, x, y);
         }
         cursor_x = x;
         cursor_y = y;
