@@ -1,13 +1,12 @@
 [package]
-name = "baram-warp4"
+name = "baram-warp4-xiao"
 version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["ttf", "normal"]
-ttf = ["normal", "baram-font/ttf", "baram-graphics/ttf"]
+default = ["xiao"]
 bdf = ["baram-font/bdf", "baram-graphics/bdf"]
-normal = []
+xiao = []
 
 [dependencies]
 baram-bsd = { path = "../baram-bsd", default-features = false }

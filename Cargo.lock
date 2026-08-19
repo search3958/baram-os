@@ -150,6 +150,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "baram-warp4-xiao"
+version = "0.1.0"
+dependencies = [
+ "baram-bsd",
+ "baram-core",
+ "baram-font",
+ "baram-graphics",
+ "uefi",
+]
+
+[[package]]
 name = "baram-windowserver"
 version = "0.1.0"
 dependencies = [
@@ -170,7 +181,7 @@ dependencies = [
  "baram-bsd",
  "baram-core",
  "baram-font",
- "baram-warp4",
+ "baram-warp4-xiao",
  "nano-system",
  "uefi",
 ]
