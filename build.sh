@@ -12,7 +12,7 @@
 #    5. Uses the bundled BaramOS AArch64 UEFI firmware, built without the
 #       upstream AAVMF 128 MiB minimum-memory assertion.
 #    6. Boots the OS in qemu-system-aarch64 using the QEMU `virt` machine
-#       (Cortex-A72, normal memory or the Xiao 22.352 MiB profile, USB mouse +
+#       (Cortex-A72, normal memory or the Xiao 7 MiB profile, virtio input +
 #       keyboard, 128x64 Xiao display).
 #
 #  Tested on:
@@ -154,11 +154,14 @@ build_efi() {
 build_xiao() {
     XIAO_MODE=1
     FIRMWARE_PATH="$XIAO_FIRMWARE_PATH"
-    # Xiao uses the smallest empirically bootable guest size. 22.3515M reaches
-    # Nano but fails its final 9 KiB allocation; 22.352M reaches the kiosk.
+    # Keep Xiao's FAT volume small as well: FAT32 metadata/cache allocations
+    # scale with the volume size during UEFI startup.
+    IMAGE_SIZE_MB=8
+    # Xiao uses the smallest whole-MiB guest size verified to reach the kiosk
+    # with the bundled 128x64 firmware. 6 MiB fails in UEFI; 7 MiB boots.
     # Keep an explicit QEMU_RAM override available for diagnostics.
     if [ "$QEMU_RAM_WAS_SET" -eq 0 ]; then
-        QEMU_RAM="23M"
+        QEMU_RAM="8M"
     fi
     local xiao_target="$SCRIPT_DIR/target/aarch64-unknown-uefi/release/xiao.efi"
     local xiao_efi="$TARGET_DIR/bootaa64-xiao.efi"
@@ -209,51 +212,71 @@ make_fat_image() {
     # Strategy A: mtools (mformat + mcopy) — works the same on macOS/Linux.
     if command -v mformat >/dev/null 2>&1 && command -v mcopy >/dev/null 2>&1; then
         log "  using mtools"
+        local mtool_drive="::"
+        local mtool_opt=()
+        local mtool_env=()
+        local xiao_mtools_conf=""
         truncate -s "${IMAGE_SIZE_MB}M" "$out" 2>/dev/null || \
             dd if=/dev/zero of="$out" bs=1m count="$IMAGE_SIZE_MB" 2>/dev/null || \
             dd if=/dev/zero of="$out" bs=1M   count="$IMAGE_SIZE_MB" 2>/dev/null
-        mformat -i "$out" -F -T $((IMAGE_SIZE_MB * 1024 * 2)) ::
-        mmd   -i "$out" ::/EFI
-        mmd   -i "$out" ::/EFI/BOOT
-        mmd   -i "$out" ::/files
+        if [ "$XIAO_MODE" -eq 1 ]; then
+            # Keep a valid partition table for UEFI's FAT binding. The FAT
+            # cache itself is reduced in the Xiao-specific FatPkg build.
+            xiao_mtools_conf="$(mktemp /tmp/baramos_mtools.XXXXXX)"
+            printf 'drive x:\n  file="%s"\n  partition=1\n  fat_bits=16\n' "$out" > "$xiao_mtools_conf"
+            mtool_env=(env "MTOOLSRC=$xiao_mtools_conf")
+            mtool_drive="x:"
+            "${mtool_env[@]}" mpartition -I "$mtool_drive"
+            "${mtool_env[@]}" mpartition -c -s 63 -h 16 -b 2048 -l $((IMAGE_SIZE_MB * 2048 - 2048)) "$mtool_drive"
+            "${mtool_env[@]}" mformat -v EFI "$mtool_drive"
+        else
+            mtool_opt=(-i "$out")
+            mformat "${mtool_opt[@]}" -F -T $((IMAGE_SIZE_MB * 1024 * 2)) ::
+        fi
+        "${mtool_env[@]}" mmd "${mtool_opt[@]}" "$mtool_drive/EFI"
+        "${mtool_env[@]}" mmd "${mtool_opt[@]}" "$mtool_drive/EFI/BOOT"
+        "${mtool_env[@]}" mmd "${mtool_opt[@]}" "$mtool_drive/files"
         if [ -d "$files_tree/app" ]; then
-            mmd -i "$out" ::/files/app
+            "${mtool_env[@]}" mmd "${mtool_opt[@]}" "$mtool_drive/files/app"
         fi
         if [ -d "$files_tree/data" ]; then
-            mmd -i "$out" ::/files/data
+            "${mtool_env[@]}" mmd "${mtool_opt[@]}" "$mtool_drive/files/data"
         fi
-        mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTAA64.EFI
+        "${mtool_env[@]}" mcopy "${mtool_opt[@]}" "$efi" "$mtool_drive/EFI/BOOT/BOOTAA64.EFI"
         if [ "$XIAO_MODE" -eq 1 ]; then
-            mcopy -i "$out" "$xiao_bdf" ::/EFI/BOOT/MISAKI_GOTHIC_2ND.BDF
+            "${mtool_env[@]}" mcopy "${mtool_opt[@]}" "$xiao_bdf" "$mtool_drive/EFI/BOOT/MISAKI_GOTHIC_2ND.BDF"
             log "  copied xiao BDF (streamed at runtime)"
         fi
         # Create bin directory for subsystems
-        mmd   -i "$out" ::/EFI/BOOT/bin 2>/dev/null || true
+        "${mtool_env[@]}" mmd "${mtool_opt[@]}" "$mtool_drive/EFI/BOOT/bin" 2>/dev/null || true
         if [ "$XIAO_MODE" -eq 0 ]; then
             # Copy subsystem binaries for the normal desktop image only.
             for name in "${SUBSYSTEM_NAMES[@]}"; do
                 local sub_bin="$TARGET_DIR/$name.efi"
                 if [ -f "$sub_bin" ]; then
-                    mcopy -i "$out" "$sub_bin" ::/EFI/BOOT/bin/
+                    "${mtool_env[@]}" mcopy "${mtool_opt[@]}" "$sub_bin" "$mtool_drive/EFI/BOOT/bin/"
                     log "  copied $name.efi to /EFI/BOOT/bin/"
                 fi
             done
         fi
         # Copy config file
         if [ -f "$SCRIPT_DIR/config.xml" ]; then
-            mcopy -i "$out" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
+            "${mtool_env[@]}" mcopy "${mtool_opt[@]}" "$SCRIPT_DIR/config.xml" "$mtool_drive/EFI/BOOT/config.xml"
             log "  copied config.xml to /EFI/BOOT/"
         fi
         if [ -d "$files_tree/app" ]; then
-            mcopy -s -i "$out" "$files_tree/app/." ::/files/app/
+            "${mtool_env[@]}" mcopy -s "${mtool_opt[@]}" "$files_tree/app/." "$mtool_drive/files/app/"
         fi
         if [ -d "$files_tree/data" ]; then
-            mcopy -s -i "$out" "$files_tree/data/." ::/files/data/
+            "${mtool_env[@]}" mcopy -s "${mtool_opt[@]}" "$files_tree/data/." "$mtool_drive/files/data/"
         fi
         log "  copied files as regular FAT files"
         # Auto-boot script: tells the UEFI shell to run our EFI binary
         # without waiting for the 5-second startup.nsh countdown.
-        printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' | mcopy -i "$out" - ::/startup.nsh
+        printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' | "${mtool_env[@]}" mcopy "${mtool_opt[@]}" - "$mtool_drive/startup.nsh"
+        if [ -n "$xiao_mtools_conf" ]; then
+            rm -f "$xiao_mtools_conf"
+        fi
         log "  -> $out"
         return 0
     fi
@@ -479,14 +502,12 @@ Install QEMU:
     # QEMU args explanation:
     #   -machine virt            : ARM virt machine (matches Raspberry Pi UEFI class)
     #   -cpu cortex-a72          : 64-bit ARM core (same family as Pi 4)
-    #   -m <profile>             : normal desktop RAM or Xiao's 22.352 MiB target
+    #   -m <profile>             : normal desktop RAM or Xiao's verified 7 MiB target
     #   -bios                    : BaramOS UEFI firmware with no 128 MiB floor
     #   -drive ...,format=raw    : FAT image as removable media (bootable)
     #   -device ramfb            : BaramOS firmware framebuffer
-    #   -device qemu-xhci        : USB 3.0 host controller (required for usb-kbd / usb-mouse)
-    #   -device usb-tablet       : USB absolute pointing device (exposed by UEFI as the
-    #                              EFI Absolute Pointer Protocol — best mouse support)
-    #   -device usb-kbd          : USB keyboard (Simple Text Input)
+    #   Xiao uses virtio keyboard/mouse, matching the minimal firmware. The
+    #   normal system keeps its USB tablet/mouse/keyboard path unchanged.
     #   -display <disp>          : GUI window (use 'none' for headless)
     #   -serial <serial>         : serial console
     #   -monitor <monitor>       : HMP monitor (use 'none' to disable, 'stdio' to control
@@ -510,6 +531,20 @@ Install QEMU:
     fi
 
     local display_device="ramfb"
+    local input_devices=()
+    if [ "$XIAO_MODE" -eq 1 ]; then
+        input_devices+=(
+            -device "virtio-keyboard-device"
+            -device "virtio-mouse-device"
+        )
+    else
+        input_devices+=(
+            -device "qemu-xhci"
+            -device "usb-tablet"
+            -device "usb-mouse"
+            -device "usb-kbd"
+        )
+    fi
     if [ "$XIAO_MODE" -eq 1 ] && [ "${XIAO_ICOUNT:-0}" = "1" ]; then
         # This is intentionally opt-in. Instruction-count timing with
         # real-time alignment can make TCG fall seconds behind while UEFI,
@@ -528,10 +563,7 @@ Install QEMU:
         -drive "if=none,file=$img,format=raw,id=hd0,cache=none" \
         -device "virtio-blk-device,drive=hd0" \
         -device "$display_device" \
-        -device "qemu-xhci" \
-        -device "usb-tablet" \
-        -device "usb-mouse" \
-        -device "usb-kbd" \
+        "${input_devices[@]}" \
         -display "$QEMU_DISPLAY" \
         -serial "$QEMU_SERIAL" \
         -monitor "$QEMU_MONITOR"
