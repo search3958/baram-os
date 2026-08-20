@@ -17,6 +17,7 @@ use uefi::runtime;
 use baram_bsd::{app, config};
 use baram_core::{Color, LayerSystem, Screen};
 use baram_warp4::Warp4Engine;
+use crate::clock::UiMonotonicClock;
 use nano_system::{NanoBasicPointerEvent, NanoKeyEvent, NanoSystem};
 
 const LIST_XML: &str = r#"<?xml version="1.0" encoding="utf-8"?>
@@ -110,8 +111,8 @@ fn handle_kiosk_key(engine: &mut Warp4Engine, event: NanoKeyEvent) -> bool {
         return true;
     }
     match event.scancode {
-        1 => engine.scroll_by(-24),
-        2 => engine.scroll_by(24),
+        1 => engine.scroll_by(-engine.scroll_step()),
+        2 => engine.scroll_by(engine.scroll_step()),
         3 => engine.focus_direction(1),
         4 => engine.focus_direction(-1),
         _ => false,
@@ -224,6 +225,11 @@ pub fn run(mut nano: NanoSystem) -> Status {
         baram_font::log::init_screen(&screen);
     }
     let mut timer = nano.take_timer_event();
+    // Runtime services expose wall-clock time with firmware-dependent
+    // granularity. Xiao's animation clock must use the hardware monotonic
+    // counter or a scroll can remain on its first frame until the next wall
+    // clock tick.
+    let ui_clock = UiMonotonicClock::new();
     let mut layer = LayerSystem::new_screen_backed(&mut screen);
     let mut display_state = baram_bsd::uri::DisplayState::new();
     baram_bsd::uri::load_settings_from_config(&mut display_state);
@@ -290,7 +296,11 @@ pub fn run(mut nano: NanoSystem) -> Status {
                     display_changed |= list.set_hover_changed(x, document_y);
                     display_changed |= list.pointer_move(x, y);
                 }
-                display_changed |= list.tick(now_ns());
+                let animation_now_ns = ui_clock
+                    .as_ref()
+                    .map(UiMonotonicClock::elapsed_ns)
+                    .unwrap_or_else(now_ns);
+                display_changed |= list.tick(animation_now_ns);
                 clicked_id = list.take_clicked_id();
                 if clicked_id.is_none() && display_changed {
                     list.draw_to_layer(&mut layer, 0, 0);
@@ -346,7 +356,11 @@ pub fn run(mut nano: NanoSystem) -> Status {
                 display_changed |= engine.set_hover_changed(x, document_y);
                 display_changed |= engine.pointer_move(x, y);
             }
-            display_changed |= engine.tick(now_ns());
+            let animation_now_ns = ui_clock
+                .as_ref()
+                .map(UiMonotonicClock::elapsed_ns)
+                .unwrap_or_else(now_ns);
+            display_changed |= engine.tick(animation_now_ns);
             // Xiao is a single-task kiosk: an app's OS-setting command is
             // executed immediately, without a permission window or hash
             // lookup.  There is no second app/window to authorize against.

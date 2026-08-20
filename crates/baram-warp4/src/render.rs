@@ -1,5 +1,35 @@
 use super::*;
 
+fn blend_fractional_pixel_up(
+    dst: &mut LayerSystem,
+    src: &LayerSystem,
+    top: usize,
+    phase: u8,
+) {
+    let width = dst.width().min(src.width());
+    let height = dst.height().min(src.height());
+    let top = top.min(height);
+    let dst_buf = dst.buf_mut();
+    let src_buf = src.buf_ref();
+    for y in top..height {
+        let next_y = (y + 1).min(height - 1);
+        let row = y * width;
+        let next_row = next_y * width;
+        for x in 0..width {
+            let a = Color(src_buf[row + x]);
+            let b = Color(src_buf[next_row + x]);
+            let phase = phase as u16;
+            let remain = 3 - phase;
+            dst_buf[row + x] = Color::rgb(
+                ((a.r() as u16 * remain + b.r() as u16 * phase + 1) / 3) as u8,
+                ((a.g() as u16 * remain + b.g() as u16 * phase + 1) / 3) as u8,
+                ((a.b() as u16 * remain + b.b() as u16 * phase + 1) / 3) as u8,
+            )
+            .0;
+        }
+    }
+}
+
 impl Warp4Engine {
     pub fn draw_to_layer(&mut self, layer: &mut LayerSystem, ox: i32, oy: i32) {
         if self.dirty {
@@ -21,22 +51,63 @@ impl Warp4Engine {
         // not apply the same offset a second time. Xiao calls this with oy=0
         // and therefore keeps the engine-owned document scroll here.
         let flow_oy = if oy != 0 { oy } else { -self.scroll };
-        for &root in &self.roots {
-            // The compositor supplies the window-manager offset.  The view
-            // tree gets two passes: normal content first, then fixed/sticky
-            // chrome.  This is what the reference CSS achieves with a
-            // viewport and `position:fixed`, without ever creating HTML.
-            self.paint(
-                layer,
-                root,
-                ox,
-                flow_oy,
-                false,
-                chrome_mode,
-                PaintPass::Flow,
+        let fractional_phase = if is_xiao() && oy == 0 {
+            self.scroll_subpixel.rem_euclid(3) as u8
+        } else {
+            0
+        };
+        if fractional_phase != 0 {
+            // Render the moving document into a small transparent scratch
+            // layer, then translate it by exactly one- or two-thirds of a
+            // pixel before the fixed/sticky pass. This keeps tiny motion from
+            // becoming a sequence of visibly bad whole-pixel jumps.
+            let mut document = LayerSystem::new_transparent(layer.width(), layer.height());
+            document.fill_rect(
+                0,
+                self.chrome_height.max(0) as usize,
+                document.width(),
+                document.height().saturating_sub(self.chrome_height.max(0) as usize),
+                bg(),
             );
-            if self.fixed_subtree.get(root).copied().unwrap_or(true) {
-                self.paint(layer, root, ox, oy, false, chrome_mode, PaintPass::Fixed);
+            for &root in &self.roots {
+                self.paint(
+                    &mut document,
+                    root,
+                    ox,
+                    flow_oy,
+                    false,
+                    chrome_mode,
+                    PaintPass::Flow,
+                );
+            }
+            blend_fractional_pixel_up(
+                layer,
+                &document,
+                self.chrome_height.max(0) as usize,
+                fractional_phase,
+            );
+            for &root in &self.roots {
+                if self.fixed_subtree.get(root).copied().unwrap_or(true) {
+                    self.paint(layer, root, ox, oy, false, chrome_mode, PaintPass::Fixed);
+                }
+            }
+        } else {
+            for &root in &self.roots {
+                // The compositor supplies the window-manager offset.  The
+                // view tree gets two passes: normal content first, then
+                // fixed/sticky chrome.
+                self.paint(
+                    layer,
+                    root,
+                    ox,
+                    flow_oy,
+                    false,
+                    chrome_mode,
+                    PaintPass::Flow,
+                );
+                if self.fixed_subtree.get(root).copied().unwrap_or(true) {
+                    self.paint(layer, root, ox, oy, false, chrome_mode, PaintPass::Fixed);
+                }
             }
         }
         if let Some(idx) = self.spinner_open {
@@ -116,10 +187,10 @@ impl Warp4Engine {
                 if let Some(fill) = parse_color(n.attr("background")) {
                     let radius = parse_dim(n.attr("cornerRadius"), 0).max(0) as usize;
                     if radius > 0 {
-                        fill_ui_rounded_rect(
+                        fill_ui_rounded_rect_at(
                             layer,
-                            x.max(0) as usize,
-                            y.max(self.chrome_height).max(0) as usize,
+                            x,
+                            y.max(self.chrome_height),
                             n.w.max(1) as usize,
                             n.h.max(1) as usize,
                             radius
@@ -128,9 +199,9 @@ impl Warp4Engine {
                             fill,
                         );
                     } else {
-                        layer.fill_rect(
-                            x.max(0) as usize,
-                            y.max(self.chrome_height).max(0) as usize,
+                        layer.fill_rect_signed(
+                            x,
+                            y.max(self.chrome_height),
                             n.w.max(1) as usize,
                             n.h.max(1) as usize,
                             fill,
@@ -147,8 +218,13 @@ impl Warp4Engine {
                 );
             }
             let child_scroll = in_scroll || is_scroll_container(n);
+            let child_oy = if is_sticky(n) {
+                self.node_screen_y(idx).saturating_sub(n.y)
+            } else {
+                oy
+            };
             for &child in &n.children {
-                self.paint(layer, child, ox, oy, child_scroll, chrome_mode, pass);
+                self.paint(layer, child, ox, child_oy, child_scroll, chrome_mode, pass);
             }
             if clipped_scroll {
                 layer.pop_clip();
@@ -157,30 +233,39 @@ impl Warp4Engine {
         }
         if pass == PaintPass::Fixed && !fixed {
             let child_scroll = in_scroll || is_scroll_container(n);
+            let child_oy = if is_sticky(n) {
+                self.node_screen_y(idx).saturating_sub(n.y)
+            } else {
+                oy
+            };
             for &child in &n.children {
-                self.paint(layer, child, ox, oy, child_scroll, chrome_mode, pass);
+                self.paint(layer, child, ox, child_oy, child_scroll, chrome_mode, pass);
             }
             return;
         }
         let x = n.x + ox;
-        let y = n.y + if fixed { 0 } else { oy };
+        let y = if is_sticky(n) {
+            self.node_screen_y(idx)
+        } else {
+            n.y + if fixed { 0 } else { oy }
+        };
         let w = n.w.max(1) as usize;
         let h = n.h.max(1) as usize;
         if !(pass == PaintPass::Fixed && fixed && is_scroll_container(n)) {
             if let Some(fill) = parse_color(n.attr("background")) {
                 let radius = parse_dim(n.attr("cornerRadius"), 0).max(0) as usize;
                 if radius > 0 {
-                    fill_ui_rounded_rect(
+                    fill_ui_rounded_rect_at(
                         layer,
-                        x.max(0) as usize,
-                        y.max(0) as usize,
+                        x,
+                        y,
                         w,
                         h,
                         radius.min(w / 2).min(h / 2),
                         fill,
                     );
                 } else {
-                    layer.fill_rect(x.max(0) as usize, y.max(0) as usize, w, h, fill);
+                    layer.fill_rect_signed(x, y, w, h, fill);
                 }
             }
         }
@@ -197,8 +282,8 @@ impl Warp4Engine {
             };
             draw_ui_button(
                 layer,
-                x.max(0) as usize,
-                y.max(0) as usize,
+                x,
+                y,
                 w,
                 button_h,
                 button_radius,
@@ -223,12 +308,12 @@ impl Warp4Engine {
             || n.is("MultiAutoCompleteTextView")
         {
             if is_xiao() {
-                draw_ui_input(layer, x.max(0) as usize, y.max(0) as usize, w, h);
+                draw_ui_input(layer, x, y, w, h);
             } else {
-                outline_ui_rounded_rect(
+                outline_ui_rounded_rect_at(
                     layer,
-                    x.max(0) as usize,
-                    y.max(0) as usize,
+                    x,
+                    y,
                     w,
                     h,
                     ui_px_usize(WARP4_INPUT_RADIUS).min(w / 2).min(h / 2),
@@ -245,8 +330,8 @@ impl Warp4Engine {
                 if is_xiao() {
                     draw_ui_checkbox(
                         layer,
-                        mark_x.max(0) as usize,
-                        mark_y.max(0) as usize,
+                        mark_x,
+                        mark_y,
                         ui_px_usize(22),
                         checked,
                         hover,
@@ -257,10 +342,10 @@ impl Warp4Engine {
                     } else {
                         palette().warp3_muted
                     };
-                    outline_ui_rounded_rect(
+                    outline_ui_rounded_rect_at(
                         layer,
-                        mark_x.max(0) as usize,
-                        mark_y.max(0) as usize,
+                        mark_x,
+                        mark_y,
                         ui_px_usize(22),
                         ui_px_usize(22),
                         ui_px_usize(4),
@@ -288,19 +373,19 @@ impl Warp4Engine {
                 } else {
                     palette().warp4_radio_off
                 };
-                fill_ui_circle(
+                fill_ui_circle_at(
                     layer,
-                    (mark_x + ui_px(9)).max(0) as usize,
-                    (mark_y + ui_px(9)).max(0) as usize,
+                    mark_x + ui_px(9),
+                    mark_y + ui_px(9),
                     ui_px_usize(9),
                     outer,
                 );
                 let inner_radius = (ui_size(4.0) * amount + ui_size(0.5)) as usize;
                 if inner_radius > 0 {
-                    fill_ui_circle(
+                    fill_ui_circle_at(
                         layer,
-                        (mark_x + ui_px(9)).max(0) as usize,
-                        (mark_y + ui_px(9)).max(0) as usize,
+                        mark_x + ui_px(9),
+                        mark_y + ui_px(9),
                         inner_radius,
                         WARP4_WHITE,
                     );
@@ -315,10 +400,10 @@ impl Warp4Engine {
                 let track = mix_color(palette().warp3_bg, palette().warp3_accent, amount);
                 let sy = y + (n.h - ui_px(22)).max(0) / 2;
                 let track_w = ui_px_usize(44);
-                outline_ui_rounded_rect(
+                outline_ui_rounded_rect_at(
                     layer,
-                    x.max(0) as usize,
-                    sy.max(0) as usize,
+                    x,
+                    sy,
                     track_w,
                     ui_px_usize(22),
                     ui_px_usize(11),
@@ -329,18 +414,18 @@ impl Warp4Engine {
                 let knob_x = x
                     + ui_px(10)
                     + ((track_w as f32 - ui_size(20.0)) * amount + ui_size(0.5)) as i32;
-                fill_ui_circle(
+                fill_ui_circle_at(
                     layer,
-                    knob_x.max(0) as usize,
-                    (sy + ui_px(11)).max(0) as usize,
+                    knob_x,
+                    sy + ui_px(11),
                     ui_px_usize(7),
                     mix_color(Color::rgb(102, 102, 102), Color::rgb(255, 255, 255), amount),
                 );
             }
         } else if n.is("Spinner") || n.is("SearchView") {
-            layer.fill_rect(
-                x.max(0) as usize,
-                (y + h as i32 - ui_px(2)).max(0) as usize,
+            layer.fill_rect_signed(
+                x,
+                y + h as i32 - ui_px(2),
                 w,
                 ui_px_usize(2).max(1),
                 if self.hovered == Some(idx) {
@@ -384,9 +469,9 @@ impl Warp4Engine {
                 for row in 0..ui_px_usize(5) {
                     let width = ui_px_usize(2) + row * ui_px_usize(2);
                     let row = row as i32;
-                    layer.fill_rect(
-                        (ax - row).max(0) as usize,
-                        (ay + row).max(0) as usize,
+                    layer.fill_rect_signed(
+                        ax - row,
+                        ay + row,
                         width as usize,
                         1,
                         palette().warp3_muted,
@@ -395,9 +480,9 @@ impl Warp4Engine {
             }
         } else if n.is("SeekBar") {
             let cy = y + h as i32 / 2;
-            layer.fill_rect(
-                x.max(0) as usize,
-                cy.max(0) as usize,
+            layer.fill_rect_signed(
+                x,
+                cy,
                 w,
                 ui_px_usize(3).max(1),
                 if self.hovered == Some(idx) {
@@ -410,18 +495,18 @@ impl Warp4Engine {
             let progress = parse_i32(n.attr("progress")).clamp(0, max);
             let px = x + w as i32 * progress / max;
             if progress > 0 {
-                layer.fill_rect(
-                    x.max(0) as usize,
-                    cy.max(0) as usize,
+                layer.fill_rect_signed(
+                    x,
+                    cy,
                     (px - x).max(0) as usize,
                     ui_px_usize(3).max(1),
                     palette().warp3_accent,
                 );
             }
-            fill_ui_circle(
+            fill_ui_circle_at(
                 layer,
-                px.max(0) as usize,
-                cy.max(0) as usize,
+                px,
+                cy,
                 ui_px_usize(if self.hovered == Some(idx) { 10 } else { 9 }).max(1),
                 palette().warp3_accent,
             );
@@ -441,10 +526,10 @@ impl Warp4Engine {
             }
         } else if n.is("ProgressBar") {
             if n.attr("style").contains("progressBarStyleHorizontal") || w > ui_px_usize(80) {
-                fill_ui_rounded_rect(
+                fill_ui_rounded_rect_at(
                     layer,
-                    x.max(0) as usize,
-                    (y + ui_px(2)).max(0) as usize,
+                    x,
+                    y + ui_px(2),
                     w,
                     ui_px_usize(6).max(1),
                     ui_px_usize(3),
@@ -452,31 +537,31 @@ impl Warp4Engine {
                 );
                 let max = parse_i32(n.attr("max")).max(1);
                 let progress = parse_i32(n.attr("progress")).clamp(0, max);
-                fill_ui_rounded_rect(
+                fill_ui_rounded_rect_at(
                     layer,
-                    x.max(0) as usize,
-                    (y + ui_px(2)).max(0) as usize,
+                    x,
+                    y + ui_px(2),
                     (w as i32 * progress / max) as usize,
                     ui_px_usize(6).max(1),
                     ui_px_usize(3),
                     palette().warp3_accent,
                 );
             } else {
-                let cx = (x + w as i32 / 2).max(0);
-                let cy = (y + h as i32 / 2).max(0);
+                let cx = x + w as i32 / 2;
+                let cy = y + h as i32 / 2;
                 let outer_radius = ui_px(14);
                 let inner_radius = ui_px(9);
-                fill_ui_circle(
+                fill_ui_circle_at(
                     layer,
-                    cx as usize,
-                    cy as usize,
+                    cx,
+                    cy,
                     outer_radius.max(1) as usize,
                     Color::rgb(207, 207, 207),
                 );
-                fill_ui_circle(
+                fill_ui_circle_at(
                     layer,
-                    cx as usize,
-                    cy as usize,
+                    cx,
+                    cy,
                     inner_radius.max(1) as usize,
                     Color::rgb(255, 255, 255),
                 );
@@ -489,41 +574,37 @@ impl Warp4Engine {
                         {
                             let px = cx + dx;
                             let py = cy + dy;
-                            if px >= 0 && py >= 0 {
-                                layer.fill_rect(
-                                    px as usize,
-                                    py as usize,
-                                    1,
-                                    1,
-                                    palette().warp3_accent,
-                                );
-                            }
+                            layer.fill_rect_signed(px, py, 1, 1, palette().warp3_accent);
                         }
                     }
                 }
             }
         } else if n.is("ImageView") {
-            layer.rect_outline(
-                x.max(0) as usize,
-                y.max(0) as usize,
+            if x < 0 || y < 0 {
+                fill_ui_rounded_rect_at(layer, x, y, w, h, 0, palette().warp3_border);
+            } else {
+                layer.rect_outline(
+                    x as usize,
+                    y as usize,
                 w,
                 h,
                 palette().warp3_border,
-            );
+                );
+            }
         } else if n.is("ListView") || n.is("ExpandableListView") {
             let row_h = ui_px_usize(44).max(1);
             for row in 0..(h / row_h) {
                 let ry = y + row as i32 * row_h as i32;
-                layer.fill_rect(
-                    x.max(0) as usize,
-                    ry.max(0) as usize,
+                layer.fill_rect_signed(
+                    x,
+                    ry,
                     w,
                     row_h.saturating_sub(1).max(1),
                     palette().warp3_surface,
                 );
-                layer.fill_rect(
-                    x.max(0) as usize,
-                    (ry + row_h.saturating_sub(1) as i32).max(0) as usize,
+                layer.fill_rect_signed(
+                    x,
+                    ry + row_h.saturating_sub(1) as i32,
                     w,
                     1,
                     palette().warp3_border,
@@ -623,11 +704,13 @@ impl Warp4Engine {
             || n.is("MultiAutoCompleteTextView"))
             && !n.attr("hint").is_empty()
         {
-            layer.put_str(
-                (x + ui_px(10)).max(0) as usize,
-                (y + ui_px(8)).max(0) as usize,
+            put_str_size(
+                layer,
+                x + ui_px(10),
+                y + ui_px(8),
                 n.attr("hint"),
                 palette().warp3_muted,
+                text_size(n),
             );
         }
         if (n.is("EditText") || n.is("AutoCompleteTextView") || n.is("MultiAutoCompleteTextView"))
@@ -651,8 +734,13 @@ impl Warp4Engine {
                 (y + n.h).max(0) as usize,
             );
         }
+        let child_oy = if is_sticky(n) {
+            self.node_screen_y(idx).saturating_sub(n.y)
+        } else {
+            oy
+        };
         for &child in &n.children {
-            self.paint(layer, child, ox, oy, child_scroll, chrome_mode, pass);
+            self.paint(layer, child, ox, child_oy, child_scroll, chrome_mode, pass);
         }
         if is_scroll_container(n) {
             if n.is("ScrollView") && n.content_h > n.h {

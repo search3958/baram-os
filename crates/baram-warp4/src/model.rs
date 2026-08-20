@@ -99,7 +99,12 @@ pub struct Warp4Engine {
     pub(crate) scroll: i32,
     pub(crate) scroll_target: i32,
     pub(crate) scroll_start: i32,
-    pub(crate) scroll_elapsed_ns: u64,
+    /// Xiao keeps the animated viewport in half-pixel units. The integer
+    /// fields above remain the document-coordinate API used by input/layout.
+    pub(crate) scroll_subpixel: i32,
+    pub(crate) scroll_target_subpixel: i32,
+    pub(crate) scroll_start_subpixel: i32,
+    pub(crate) scroll_started_ns: Option<u64>,
     pub content_height: i32,
     pub last_command: Option<String>,
     pub(crate) dirty: bool,

@@ -3,6 +3,8 @@
 
 #[path = "../../baram-boot/src/kiosk.rs"]
 mod kiosk;
+#[path = "../../baram-boot/src/clock.rs"]
+mod clock;
 
 nano_system::nano_entry_with_target!(kiosk::run, 128, 64);
 

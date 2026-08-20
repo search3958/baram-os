@@ -8,10 +8,24 @@ pub(crate) fn fill_ui_rounded_rect(
     radius: usize,
     color: Color,
 ) {
+    fill_ui_rounded_rect_at(layer, x as i32, y as i32, w, h, radius, color);
+}
+
+pub(crate) fn fill_ui_rounded_rect_at(
+    layer: &mut LayerSystem,
+    x: i32,
+    y: i32,
+    w: usize,
+    h: usize,
+    radius: usize,
+    color: Color,
+) {
     if is_xiao() {
         layer.fill_rounded_rect_aa(x, y, w, h, radius, color);
+    } else if x >= 0 && y >= 0 {
+        layer.fill_rounded_rect(x as usize, y as usize, w, h, radius, color);
     } else {
-        layer.fill_rounded_rect(x, y, w, h, radius, color);
+        layer.fill_rect_signed(x, y, w, h, color);
     }
 }
 
@@ -26,15 +40,31 @@ pub(crate) fn fill_ui_gradient_rounded_rect(
     top: Color,
     bottom: Color,
 ) {
+    fill_ui_gradient_rounded_rect_at(
+        layer, x as i32, y as i32, w, h, radius, border, top, bottom,
+    );
+}
+
+pub(crate) fn fill_ui_gradient_rounded_rect_at(
+    layer: &mut LayerSystem,
+    x: i32,
+    y: i32,
+    w: usize,
+    h: usize,
+    radius: usize,
+    border: Color,
+    top: Color,
+    bottom: Color,
+) {
     if w == 0 || h == 0 {
         return;
     }
-    fill_ui_rounded_rect(layer, x, y, w, h, radius, border);
+    fill_ui_rounded_rect_at(layer, x, y, w, h, radius, border);
     if is_xiao() {
         // Xiao keeps the same geometry but uses solid dark-mode faces rather
         // than the normal profile's vertical gradient.
         if w > 2 && h > 2 {
-            fill_ui_rounded_rect(
+            fill_ui_rounded_rect_at(
                 layer,
                 x + 1,
                 y + 1,
@@ -69,9 +99,9 @@ pub(crate) fn fill_ui_gradient_rounded_rect(
         } else {
             row as f32 / (inner_h - 1) as f32
         };
-        layer.fill_rect(
-            x + 1 + inset,
-            y + 1 + row,
+        layer.fill_rect_signed(
+            x + 1 + inset as i32,
+            y + 1 + row as i32,
             width,
             1,
             mix_color(top, bottom, amount),
@@ -89,10 +119,23 @@ pub(crate) fn outline_ui_rounded_rect(
     border: Color,
     fill: Color,
 ) {
+    outline_ui_rounded_rect_at(layer, x as i32, y as i32, w, h, radius, border, fill);
+}
+
+pub(crate) fn outline_ui_rounded_rect_at(
+    layer: &mut LayerSystem,
+    x: i32,
+    y: i32,
+    w: usize,
+    h: usize,
+    radius: usize,
+    border: Color,
+    fill: Color,
+) {
     if is_xiao() {
-        fill_ui_rounded_rect(layer, x, y, w, h, radius, border);
+        fill_ui_rounded_rect_at(layer, x, y, w, h, radius, border);
         if w > 2 && h > 2 {
-            fill_ui_rounded_rect(
+            fill_ui_rounded_rect_at(
                 layer,
                 x + 1,
                 y + 1,
@@ -102,8 +145,10 @@ pub(crate) fn outline_ui_rounded_rect(
                 fill,
             );
         }
+    } else if x >= 0 && y >= 0 {
+        layer.rounded_rect_outline(x as usize, y as usize, w, h, radius, border, fill);
     } else {
-        layer.rounded_rect_outline(x, y, w, h, radius, border, fill);
+        fill_ui_rounded_rect_at(layer, x, y, w, h, radius, fill);
     }
 }
 
@@ -117,10 +162,20 @@ pub(crate) fn fill_ui_circle(
     layer.fill_circle(cx, cy, radius, color);
 }
 
+pub(crate) fn fill_ui_circle_at(
+    layer: &mut LayerSystem,
+    cx: i32,
+    cy: i32,
+    radius: usize,
+    color: Color,
+) {
+    layer.fill_circle_signed(cx, cy, radius, color);
+}
+
 pub(crate) fn draw_ui_button(
     layer: &mut LayerSystem,
-    x: usize,
-    y: usize,
+    x: i32,
+    y: i32,
     w: usize,
     h: usize,
     radius: usize,
@@ -129,13 +184,13 @@ pub(crate) fn draw_ui_button(
     _primary: bool,
 ) {
     if !is_xiao() {
-        layer.fill_rounded_rect(x, y, w, h, radius, color);
+        fill_ui_rounded_rect_at(layer, x, y, w, h, radius, color);
         return;
     }
     // Xiao uses the normal Warp4 shape language at compact scale: an
     // anti-aliased rounded solid dark-mode face without a button border.
     let p = palette();
-    fill_ui_rounded_rect(layer, x, y, w, h, p.button_radius, color);
+    fill_ui_rounded_rect_at(layer, x, y, w, h, p.button_radius, color);
 }
 
 pub(crate) fn ui_button_face(active: bool, selected: bool, hover: bool, primary: bool) -> Color {
@@ -184,10 +239,10 @@ pub(crate) fn draw_ui_switch(layer: &mut LayerSystem, x: i32, y: i32, h: i32, on
     let p = palette();
     let track_w = ui_px_usize(40).max(12);
     let track_h = ui_px_usize(20).max(8);
-    let sy = (y + (h - track_h as i32).max(0) / 2).max(0) as usize;
-    fill_ui_gradient_rounded_rect(
+    let sy = y + (h - track_h as i32).max(0) / 2;
+    fill_ui_gradient_rounded_rect_at(
         layer,
-        x.max(0) as usize,
+        x,
         sy,
         track_w,
         track_h,
@@ -199,11 +254,11 @@ pub(crate) fn draw_ui_switch(layer: &mut LayerSystem, x: i32, y: i32, h: i32, on
     let knob_w = track_w.saturating_sub(6).min(ui_px_usize(16).max(6));
     let knob_h = track_h.saturating_sub(4).max(3);
     let knob_x = if on {
-        x.max(0) as usize + track_w.saturating_sub(knob_w + 3)
+        x + track_w.saturating_sub(knob_w + 3) as i32
     } else {
-        x.max(0) as usize + 3
+        x + 3
     };
-    fill_ui_gradient_rounded_rect(
+    fill_ui_gradient_rounded_rect_at(
         layer,
         knob_x,
         sy + 2,
@@ -220,24 +275,24 @@ pub(crate) fn draw_ui_switch(layer: &mut LayerSystem, x: i32, y: i32, h: i32, on
     );
 }
 
-pub(crate) fn draw_ui_input(layer: &mut LayerSystem, x: usize, y: usize, w: usize, h: usize) {
+pub(crate) fn draw_ui_input(layer: &mut LayerSystem, x: i32, y: i32, w: usize, h: usize) {
     let p = palette();
-    fill_ui_rounded_rect(layer, x, y, w, h, 4, p.warp4_input_border);
+    fill_ui_rounded_rect_at(layer, x, y, w, h, 4, p.warp4_input_border);
     if w > 2 && h > 2 {
-        fill_ui_rounded_rect(layer, x + 1, y + 1, w - 2, h - 2, 3, p.warp4_input_bg);
+        fill_ui_rounded_rect_at(layer, x + 1, y + 1, w - 2, h - 2, 3, p.warp4_input_bg);
         if w > 4 && h > 4 {
-            layer.fill_rect(x + 1, y + 1, w - 2, 1, p.warp9_shadow);
-            layer.fill_rect(x + 1, y + h - 2, w - 2, 1, p.warp9_highlight);
-            layer.fill_rect(x + 1, y + 1, 1, h - 2, p.warp9_shadow);
-            layer.fill_rect(x + w - 2, y + 1, 1, h - 2, p.warp9_highlight);
+            layer.fill_rect_signed(x + 1, y + 1, w - 2, 1, p.warp9_shadow);
+            layer.fill_rect_signed(x + 1, y + h as i32 - 2, w - 2, 1, p.warp9_highlight);
+            layer.fill_rect_signed(x + 1, y + 1, 1, h - 2, p.warp9_shadow);
+            layer.fill_rect_signed(x + w as i32 - 2, y + 1, 1, h - 2, p.warp9_highlight);
         }
     }
 }
 
 pub(crate) fn draw_ui_checkbox(
     layer: &mut LayerSystem,
-    x: usize,
-    y: usize,
+    x: i32,
+    y: i32,
     size: usize,
     checked: bool,
     hover: bool,
@@ -253,12 +308,12 @@ pub(crate) fn draw_ui_checkbox(
     } else {
         (p.warp9_highlight, p.warp9_mid)
     };
-    fill_ui_gradient_rounded_rect(layer, x, y, size, size, 3, border, top, bottom);
+    fill_ui_gradient_rounded_rect_at(layer, x, y, size, size, 3, border, top, bottom);
     if checked {
         draw_check_icon(
             layer,
-            (x + ui_px_usize(5)) as i32,
-            (y + ui_px_usize(5)) as i32,
+            x + ui_px_usize(5) as i32,
+            y + ui_px_usize(5) as i32,
         );
     }
 }

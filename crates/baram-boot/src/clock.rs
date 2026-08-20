@@ -1,11 +1,11 @@
-struct UiMonotonicClock {
+pub(crate) struct UiMonotonicClock {
     origin: u64,
     last: u64,
     frequency_hz: u64,
 }
 
 impl UiMonotonicClock {
-    fn new() -> Option<Self> {
+    pub(crate) fn new() -> Option<Self> {
         let frequency_hz = monotonic_counter_frequency()?;
         let origin = monotonic_counter();
         Some(Self {
@@ -28,7 +28,7 @@ impl UiMonotonicClock {
     }
 
     #[inline]
-    fn elapsed_ns(&self) -> u64 {
+    pub(crate) fn elapsed_ns(&self) -> u64 {
         let ticks = monotonic_counter().wrapping_sub(self.origin);
         ((ticks as u128 * 1_000_000_000) / self.frequency_hz as u128) as u64
     }
@@ -91,5 +91,3 @@ fn monotonic_counter_frequency() -> Option<u64> {
         Some(value)
     }
 }
-
-

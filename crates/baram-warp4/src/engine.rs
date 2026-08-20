@@ -1,5 +1,29 @@
 use super::*;
 
+/// Match the normal window server's cubic-bezier(0, 0, 0, 1) scroll curve.
+/// Solving x=s^3 with a short binary search keeps this identical without
+/// adding a curve table to the Xiao image.
+fn decelerate_scroll(t: f32) -> f32 {
+    if t <= 0.0 {
+        return 0.0;
+    }
+    if t >= 1.0 {
+        return 1.0;
+    }
+    let mut low = 0.0f32;
+    let mut high = 1.0f32;
+    for _ in 0..10 {
+        let s = (low + high) * 0.5;
+        if s * s * s < t {
+            low = s;
+        } else {
+            high = s;
+        }
+    }
+    let s = (low + high) * 0.5;
+    s * s * (3.0 - 2.0 * s)
+}
+
 impl Warp4Engine {
     pub fn new(app_name: &str) -> Self {
         Self::from_archive(Warp4Archive::open(app_name))
@@ -36,7 +60,10 @@ impl Warp4Engine {
             scroll: 0,
             scroll_target: 0,
             scroll_start: 0,
-            scroll_elapsed_ns: 0,
+            scroll_subpixel: 0,
+            scroll_target_subpixel: 0,
+            scroll_start_subpixel: 0,
+            scroll_started_ns: None,
             content_height: 0,
             last_command: None,
             dirty: true,
@@ -88,7 +115,10 @@ impl Warp4Engine {
             self.scroll = 0;
             self.scroll_target = 0;
             self.scroll_start = 0;
-            self.scroll_elapsed_ns = 0;
+            self.scroll_subpixel = 0;
+            self.scroll_target_subpixel = 0;
+            self.scroll_start_subpixel = 0;
+            self.scroll_started_ns = None;
             self.dirty = true;
             self.layout_dirty = true;
         }
@@ -105,11 +135,20 @@ impl Warp4Engine {
             .saturating_sub(self.height + self.chrome_height);
         let next = scroll.max(0).min(max.max(0));
         if is_xiao() {
-            let changed = self.scroll_target != next || self.scroll != next;
-            if self.scroll_target != next {
-                self.scroll_start = self.scroll;
-                self.scroll_elapsed_ns = 0;
+            let next_subpixel = next.saturating_mul(3);
+            let changed = self.scroll_target_subpixel != next_subpixel
+                || self.scroll_subpixel != next_subpixel;
+            if self.scroll_target_subpixel != next_subpixel {
+                // Queue a new destination while an animation is in flight.
+                // Restarting from the current frame made repeated arrow keys
+                // visibly stutter and differed from the normal window server.
+                if self.scroll_subpixel == self.scroll_target_subpixel {
+                    self.scroll_start = self.scroll;
+                    self.scroll_start_subpixel = self.scroll_subpixel;
+                    self.scroll_started_ns = None;
+                }
                 self.scroll_target = next;
+                self.scroll_target_subpixel = next_subpixel;
             }
             if changed {
                 if let Some(idx) = self.spinner_open {
@@ -122,7 +161,10 @@ impl Warp4Engine {
             self.scroll = next;
             self.scroll_target = next;
             self.scroll_start = next;
-            self.scroll_elapsed_ns = 0;
+            self.scroll_subpixel = next.saturating_mul(3);
+            self.scroll_target_subpixel = self.scroll_subpixel;
+            self.scroll_start_subpixel = self.scroll_subpixel;
+            self.scroll_started_ns = None;
             if let Some(idx) = self.spinner_open {
                 self.close_spinner(idx);
             }
@@ -134,6 +176,10 @@ impl Warp4Engine {
     /// Move the active document viewport by a fixed keyboard step.  Xiao uses
     /// this directly for UEFI arrow-key events because those events have no
     /// printable byte to pass through `handle_key`.
+    pub fn scroll_step(&self) -> i32 {
+        config::get_i32("ui-theme/window/scroll_speed", 30).max(1)
+    }
+
     pub fn scroll_by(&mut self, delta: i32) -> bool {
         let before = if is_xiao() {
             self.scroll_target
@@ -159,7 +205,7 @@ impl Warp4Engine {
     }
     pub fn is_animating(&self) -> bool {
         !self.control_animations.is_empty()
-            || (is_xiao() && self.scroll != self.scroll_target)
+            || (is_xiao() && self.scroll_subpixel != self.scroll_target_subpixel)
             || self.transition_elapsed_ns.is_some()
     }
     pub fn window_damage(&self) -> Option<(i32, i32, i32, i32)> {
@@ -206,7 +252,12 @@ impl Warp4Engine {
         self.keyboard_focus = Some(next);
         self.ensure_keyboard_focus_visible(next);
         self.dirty = true;
-        changed || self.scroll != self.scroll_target
+        changed
+            || if is_xiao() {
+                self.scroll_subpixel != self.scroll_target_subpixel
+            } else {
+                self.scroll != self.scroll_target
+            }
     }
 
     /// Activate the currently focused button as if Space had clicked it.
@@ -279,31 +330,40 @@ impl Warp4Engine {
         if transition_finished {
             self.transition_elapsed_ns = None;
         }
-        if is_xiao() && self.scroll != self.scroll_target {
-            // Advance from the timer delta instead of reading the firmware
-            // wall clock. Some UEFI implementations expose a coarse or
-            // occasionally unchanged nanosecond field, which made a small
-            // scroll animation stop at its first frame even though redraws
-            // continued normally.
-            self.scroll_elapsed_ns = self.scroll_elapsed_ns.saturating_add(delta.max(1_000_000));
-            let t =
-                (self.scroll_elapsed_ns as f32 / XIAO_SCROLL_ANIMATION_NS as f32).clamp(0.0, 1.0);
-            let remaining = 1.0 - t;
-            let eased = 1.0 - remaining * remaining * remaining;
-            let distance = self.scroll_target - self.scroll_start;
-            let next = if t >= 1.0 {
-                self.scroll_target
+        if is_xiao() && self.scroll_subpixel != self.scroll_target_subpixel {
+            // Use the same timestamp-origin model as the normal window
+            // server. Accumulating frame deltas made input bursts and missed
+            // timer wakeups change the effective scroll speed.
+            let started = *self
+                .scroll_started_ns
+                .get_or_insert(self.now_ns.saturating_sub(1_000_000));
+            let elapsed = self.now_ns.saturating_sub(started);
+            let t = (elapsed as f32 / XIAO_SCROLL_ANIMATION_NS as f32).clamp(0.0, 1.0);
+            let eased = decelerate_scroll(t);
+            let distance = self.scroll_target_subpixel - self.scroll_start_subpixel;
+            let next_subpixel = if t >= 1.0 {
+                self.scroll_target_subpixel
             } else {
-                self.scroll_start + (distance as f32 * eased) as i32
+                let amount = distance as f32 * eased;
+                // Round to the nearest third-pixel. Truncation left a final
+                // fraction pending and produced a visible last-pixel jump.
+                let rounded = if amount >= 0.0 {
+                    (amount + 0.5) as i32
+                } else {
+                    (amount - 0.5) as i32
+                };
+                self.scroll_start_subpixel.saturating_add(rounded)
             };
-            if self.scroll != next {
-                self.scroll = next;
+            if self.scroll_subpixel != next_subpixel {
+                self.scroll_subpixel = next_subpixel;
+                self.scroll = next_subpixel.div_euclid(3);
                 self.dirty = true;
                 changed = true;
             }
             if t >= 1.0 {
                 self.scroll_start = self.scroll_target;
-                self.scroll_elapsed_ns = 0;
+                self.scroll_start_subpixel = self.scroll_target_subpixel;
+                self.scroll_started_ns = None;
             }
         }
         let mut flip_interval_ns: Option<u64> = None;
@@ -445,7 +505,10 @@ impl Warp4Engine {
         self.scroll = 0;
         self.scroll_target = 0;
         self.scroll_start = 0;
-        self.scroll_elapsed_ns = 0;
+        self.scroll_subpixel = 0;
+        self.scroll_target_subpixel = 0;
+        self.scroll_start_subpixel = 0;
+        self.scroll_started_ns = None;
         self.wait_until_ns = None;
         self.pending.clear();
         let mut layout = self.archive.read_text(&format!("{}.w4u", self.screen));
@@ -562,6 +625,9 @@ impl Warp4Engine {
         self.scroll = self.scroll.min(max_scroll);
         self.scroll_target = self.scroll_target.min(max_scroll);
         self.scroll_start = self.scroll_start.min(max_scroll);
+        self.scroll_subpixel = self.scroll_subpixel.min(max_scroll.saturating_mul(3));
+        self.scroll_target_subpixel = self.scroll_target_subpixel.min(max_scroll.saturating_mul(3));
+        self.scroll_start_subpixel = self.scroll_start_subpixel.min(max_scroll.saturating_mul(3));
         self.dirty = false;
         self.layout_dirty = false;
     }

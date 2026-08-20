@@ -142,8 +142,8 @@ impl LayerSystem {
     /// rectangle instead of a short polygon approximation.
     pub fn fill_rounded_rect_aa(
         &mut self,
-        x: usize,
-        y: usize,
+        x: i32,
+        y: i32,
         w: usize,
         h: usize,
         r: usize,
@@ -154,14 +154,19 @@ impl LayerSystem {
         }
         let r = r.min(w / 2).min(h / 2);
         if r == 0 {
-            self.fill_rect(x, y, w, h, c);
+            self.fill_rect_signed(x, y, w, h, c);
             return;
         }
-        let Some((x0, y0, x1, y1)) =
-            self.clipped_rect(x, y, x.saturating_add(w), y.saturating_add(h))
-        else {
+        let right = x.saturating_add(w.min(i32::MAX as usize) as i32);
+        let bottom = y.saturating_add(h.min(i32::MAX as usize) as i32);
+        let (clip_x0, clip_y0, clip_x1, clip_y1) = self.clip_bounds();
+        let x0 = x.max(0).min(self.width as i32).max(clip_x0 as i32) as usize;
+        let y0 = y.max(0).min(self.height as i32).max(clip_y0 as i32) as usize;
+        let x1 = right.max(0).min(self.width as i32).min(clip_x1 as i32) as usize;
+        let y1 = bottom.max(0).min(self.height as i32).min(clip_y1 as i32) as usize;
+        if x0 >= x1 || y0 >= y1 {
             return;
-        };
+        }
 
         const SAMPLES: usize = 8;
         const SAMPLE_COUNT: f32 = (SAMPLES * SAMPLES) as f32;
@@ -173,14 +178,14 @@ impl LayerSystem {
 
         for py in y0..y1 {
             let row = py * self.width;
-            let local_y = py.saturating_sub(y);
+            let local_y = py as i32 - y;
             for px in x0..x1 {
-                let local_x = px.saturating_sub(x);
+                let local_x = px as i32 - x;
 
                 // Pixels in either central strip cannot intersect a corner,
                 // so keep the fast opaque fill for the bulk of the control.
-                if (local_x >= r && local_x + 1 <= w - r)
-                    || (local_y >= r && local_y + 1 <= h - r)
+                if (local_x >= r as i32 && local_x + 1 <= (w - r) as i32)
+                    || (local_y >= r as i32 && local_y + 1 <= (h - r) as i32)
                 {
                     self.buf[row + px] = value;
                     continue;
@@ -383,6 +388,69 @@ impl LayerSystem {
                     let g = (cg * alpha + bg2 * (1.0 - alpha)) as u32;
                     let b = (cb * alpha + bb * (1.0 - alpha)) as u32;
                     self.buf[row + px] = Color::rgb(r2 as u8, g as u8, b as u8).0;
+                }
+            }
+        }
+    }
+
+    /// Signed-origin circle variant used by scrolling controls. The center is
+    /// deliberately not clamped before rasterization, so a partially visible
+    /// knob remains partially visible instead of jumping onto the viewport.
+    pub fn fill_circle_signed(&mut self, cx: i32, cy: i32, r: usize, c: Color) {
+        if r == 0 {
+            return;
+        }
+        let rf = r as f32;
+        let (clip_x0, clip_y0, clip_x1, clip_y1) = self.clip_bounds();
+        let x0 = (cx - r as i32)
+            .max(0)
+            .min(self.width as i32)
+            .max(clip_x0 as i32) as usize;
+        let y0 = (cy - r as i32)
+            .max(0)
+            .min(self.height as i32)
+            .max(clip_y0 as i32) as usize;
+        let x1 = (cx.saturating_add(r as i32 + 1))
+            .max(0)
+            .min(self.width as i32)
+            .min(clip_x1 as i32) as usize;
+        let y1 = (cy.saturating_add(r as i32 + 1))
+            .max(0)
+            .min(self.height as i32)
+            .min(clip_y1 as i32) as usize;
+        if x0 >= x1 || y0 >= y1 {
+            return;
+        }
+        self.mark_dirty_rect(x0, y0, x1, y1);
+        let cr = c.r() as f32;
+        let cg = c.g() as f32;
+        let cb = c.b() as f32;
+        for py in y0..y1 {
+            let row = py * self.width;
+            for px in x0..x1 {
+                let dx = px as f32 + 0.5 - cx as f32;
+                let dy = py as f32 + 0.5 - cy as f32;
+                let dist_sq = dx * dx + dy * dy;
+                let alpha = if dist_sq < (rf - 0.5) * (rf - 0.5) {
+                    1.0
+                } else if dist_sq > (rf + 0.5) * (rf + 0.5) {
+                    continue;
+                } else {
+                    let dist = libm::sqrtf(dist_sq);
+                    (rf + 0.5 - dist).clamp(0.0, 1.0)
+                };
+                if alpha >= 1.0 {
+                    self.buf[row + px] = c.0;
+                } else {
+                    let bg = self.buf[row + px];
+                    let br = ((bg >> 16) & 0xFF) as f32;
+                    let bg2 = ((bg >> 8) & 0xFF) as f32;
+                    let bb = (bg & 0xFF) as f32;
+                    self.buf[row + px] = Color::rgb(
+                        (cr * alpha + br * (1.0 - alpha)) as u8,
+                        (cg * alpha + bg2 * (1.0 - alpha)) as u8,
+                        (cb * alpha + bb * (1.0 - alpha)) as u8,
+                    ).0;
                 }
             }
         }

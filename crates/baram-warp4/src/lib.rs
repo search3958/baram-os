@@ -49,7 +49,9 @@ const MAX_NODES: usize = 2048;
 const MAX_ACTIONS: usize = 2048;
 const SWITCH_DURATION_NS: u64 = 220_000_000;
 const RADIO_DURATION_NS: u64 = 180_000_000;
-const XIAO_SCROLL_ANIMATION_NS: u64 = 125_000_000;
+// Keep the standalone Xiao viewport in lockstep with the normal window
+// server's scroll animation. The owner differs, but the motion must not.
+const XIAO_SCROLL_ANIMATION_NS: u64 = 180_000_000;
 const XIAO_TRANSITION_NS: u64 = 180_000_000;
 const KEYBOARD_PRESS_NS: u64 = 120_000_000;
 #[cfg(feature = "ttf")]

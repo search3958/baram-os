@@ -349,12 +349,35 @@ impl Warp4Engine {
 
     pub(crate) fn node_screen_y(&self, idx: usize) -> i32 {
         let chrome_mode = self.has_explicit_scroll();
-        self.nodes[idx].y
-            + if self.node_is_fixed(idx, chrome_mode) {
-                0
-            } else {
-                -self.scroll
+        let node = &self.nodes[idx];
+        if is_sticky(node) {
+            let flow_y = node.y - self.scroll;
+            let (top, bottom) = self.sticky_bounds(idx, chrome_mode);
+            return flow_y.clamp(top, bottom.max(top));
+        }
+        node.y + if is_explicit_fixed(node) || (chrome_mode && is_scroll_container(node)) {
+            0
+        } else {
+            -self.scroll
+        }
+    }
+
+    fn sticky_bounds(&self, idx: usize, chrome_mode: bool) -> (i32, i32) {
+        let node = &self.nodes[idx];
+        let mut current = node.parent;
+        while let Some(parent_idx) = current {
+            let parent = &self.nodes[parent_idx];
+            if is_scroll_container(parent) {
+                let top = self.node_screen_y(parent_idx) + edges(parent, "padding").top;
+                let bottom = self.node_screen_y(parent_idx) + parent.h
+                    - edges(parent, "padding").bottom - node.h;
+                return (top, bottom);
             }
+            current = parent.parent;
+        }
+        let top = if chrome_mode { self.chrome_height } else { 0 };
+        let bottom = top + self.height - node.h;
+        (top, bottom)
     }
 
     pub(crate) fn set_seek_progress(&mut self, idx: usize, x: i32) -> bool {

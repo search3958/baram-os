@@ -113,13 +113,17 @@ pub(crate) fn contains_scroll(nodes: &[Node], idx: usize) -> bool {
             .iter()
             .any(|child| contains_scroll(nodes, *child))
 }
-pub(crate) fn is_fixed(n: &Node) -> bool {
+pub(crate) fn is_explicit_fixed(n: &Node) -> bool {
     let position = n.attr("position");
     position.eq_ignore_ascii_case("fixed")
-        || position.eq_ignore_ascii_case("sticky")
         || truth(n.attr("fixed"))
-        || truth(n.attr("sticky"))
         || n.attr("layout_position").eq_ignore_ascii_case("fixed")
+}
+pub(crate) fn is_sticky(n: &Node) -> bool {
+    n.attr("position").eq_ignore_ascii_case("sticky") || truth(n.attr("sticky"))
+}
+pub(crate) fn is_fixed(n: &Node) -> bool {
+    is_explicit_fixed(n) || is_sticky(n)
 }
 pub(crate) fn gravity_offset(
     gravity: &str,
@@ -423,8 +427,33 @@ pub(crate) fn put_str_size(
     size: f32,
 ) {
     if bdf_font::is_available() {
-        if x >= 0 && y >= 0 {
-            layer.put_str(x as usize, y as usize, text, color);
+        let width = layer.width();
+        let (clip_x0, clip_y0, clip_x1, clip_y1) = layer.clip_bounds();
+        let mut cursor_x = x;
+        for ch in text.chars() {
+            let mut advance = 8;
+            let _ = bdf_font::with_glyph(ch, |data, gw, gh, glyph_advance, y_off| {
+                advance = glyph_advance.max(1);
+                let top = bdf_font::top_offset(gh, y_off);
+                let buf = layer.buf_mut();
+                for row in 0..gh {
+                    let py = y + top + row;
+                    if py < clip_y0 as i32 || py >= clip_y1 as i32 {
+                        continue;
+                    }
+                    for col in 0..gw {
+                        let px = cursor_x + col;
+                        if px >= clip_x0 as i32
+                            && px < clip_x1 as i32
+                            && data[(row * gw + col) as usize] != 0
+                        {
+                            buf[py as usize * width + px as usize] = color.0;
+                        }
+                    }
+                }
+                true
+            });
+            cursor_x += advance;
         }
         let _ = size;
         return;
@@ -486,18 +515,18 @@ pub(crate) fn draw_check_icon(layer: &mut LayerSystem, x: i32, y: i32) {
         let size = ui_px_usize(12).max(4) as i32;
         let stroke = ui_px_usize(2).max(1);
         for i in 0..(size / 3).max(1) {
-            layer.fill_rect(
-                (x + size / 5 + i).max(0) as usize,
-                (y + size / 2 + i).max(0) as usize,
+            layer.fill_rect_signed(
+                x + size / 5 + i,
+                y + size / 2 + i,
                 stroke,
                 stroke,
                 Color::rgb(255, 255, 255),
             );
         }
         for i in 0..(size * 2 / 3).max(1) {
-            layer.fill_rect(
-                (x + size / 3 + i).max(0) as usize,
-                (y + size * 2 / 3 - i).max(0) as usize,
+            layer.fill_rect_signed(
+                x + size / 3 + i,
+                y + size * 2 / 3 - i,
                 stroke,
                 stroke,
                 Color::rgb(255, 255, 255),

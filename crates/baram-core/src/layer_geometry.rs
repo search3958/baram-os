@@ -306,6 +306,25 @@ impl LayerSystem {
         }
     }
 
+    /// Fill a rectangle whose layout position may be outside the layer.
+    /// Keeping the signed origin is important for scrolling: clamping the
+    /// origin before drawing turns an off-screen item into a sticky item at
+    /// the top-left corner.
+    pub fn fill_rect_signed(&mut self, x: i32, y: i32, w: usize, h: usize, c: Color) {
+        if w == 0 || h == 0 {
+            return;
+        }
+        let right = x.saturating_add(w.min(i32::MAX as usize) as i32);
+        let bottom = y.saturating_add(h.min(i32::MAX as usize) as i32);
+        let x0 = x.max(0).min(self.width as i32) as usize;
+        let y0 = y.max(0).min(self.height as i32) as usize;
+        let x1 = right.max(0).min(self.width as i32) as usize;
+        let y1 = bottom.max(0).min(self.height as i32) as usize;
+        if x0 < x1 && y0 < y1 {
+            self.fill_rect(x0, y0, x1 - x0, y1 - y0, c);
+        }
+    }
+
     fn cubic_bezier(p0: f32, p1: f32, p2: f32, p3: f32, t: f32) -> f32 {
         let t2 = t * t;
         let t3 = t2 * t;
@@ -443,4 +462,3 @@ impl LayerSystem {
     }
 
 }
-
