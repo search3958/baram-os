@@ -9,23 +9,7 @@ pub(crate) fn fill_ui_rounded_rect(
     color: Color,
 ) {
     if is_xiao() {
-        if w == 0 || h == 0 {
-            return;
-        }
-        let radius = radius.min(4).min(w / 2).min(h / 2);
-        for row in 0..h {
-            let inset = if row < radius {
-                radius - row
-            } else if row >= h.saturating_sub(radius) {
-                radius - (h - 1 - row)
-            } else {
-                0
-            };
-            let width = w.saturating_sub(inset.saturating_mul(2));
-            if width > 0 {
-                layer.fill_rect(x + inset, y + row, width, 1, color);
-            }
-        }
+        layer.fill_rounded_rect_aa(x, y, w, h, radius, color);
     } else {
         layer.fill_rounded_rect(x, y, w, h, radius, color);
     }
@@ -46,6 +30,22 @@ pub(crate) fn fill_ui_gradient_rounded_rect(
         return;
     }
     fill_ui_rounded_rect(layer, x, y, w, h, radius, border);
+    if is_xiao() {
+        // Xiao keeps the same geometry but uses solid dark-mode faces rather
+        // than the normal profile's vertical gradient.
+        if w > 2 && h > 2 {
+            fill_ui_rounded_rect(
+                layer,
+                x + 1,
+                y + 1,
+                w - 2,
+                h - 2,
+                radius.saturating_sub(1),
+                bottom,
+            );
+        }
+        return;
+    }
     if w <= 2 || h <= 2 {
         return;
     }
@@ -114,28 +114,7 @@ pub(crate) fn fill_ui_circle(
     radius: usize,
     color: Color,
 ) {
-    if !is_xiao() {
-        layer.fill_circle(cx, cy, radius, color);
-        return;
-    }
-    let radius = radius.max(1) as i32;
-    let center_x = cx as i32;
-    let center_y = cy as i32;
-    let radius_sq = radius * radius;
-    for dy in -radius..=radius {
-        let mut span = radius;
-        while span > 0 && span * span + dy * dy > radius_sq {
-            span -= 1;
-        }
-        let left = (center_x - span).max(0) as usize;
-        layer.fill_rect(
-            left,
-            (center_y + dy).max(0) as usize,
-            (span * 2 + 1) as usize,
-            1,
-            color,
-        );
-    }
+    layer.fill_circle(cx, cy, radius, color);
 }
 
 pub(crate) fn draw_ui_button(
@@ -153,44 +132,28 @@ pub(crate) fn draw_ui_button(
         layer.fill_rounded_rect(x, y, w, h, radius, color);
         return;
     }
-    // Xiao keeps the System 9 face and edge treatment, while the XML-resolved
-    // node size controls the actual button bounds.
+    // Xiao uses the normal Warp4 shape language at compact scale: an
+    // anti-aliased rounded solid dark-mode face without a button border.
     let p = palette();
-    fill_ui_rounded_rect(layer, x, y, w, h, p.button_radius, p.button_border);
-    if w <= 2 || h <= 2 {
-        return;
-    }
-    fill_ui_rounded_rect(layer, x + 1, y + 1, w - 2, h - 2, 1, color);
-    if w > 4 && h > 4 {
-        let horizontal_w = w - 4;
-        let vertical_h = h - 4;
-        if _pressed {
-            layer.fill_rect(x + 2, y + 1, horizontal_w, 1, p.button_shadow_1);
-            layer.fill_rect(x + 1, y + 2, 1, vertical_h, p.button_shadow_1);
-            layer.fill_rect(x + 2, y + 2, horizontal_w, 1, p.button_shadow_2);
-            layer.fill_rect(x + 2, y + 2, 1, vertical_h, p.button_shadow_2);
-            layer.fill_rect(x + 2, y + h - 2, horizontal_w, 1, p.button_highlight);
-            layer.fill_rect(x + w - 2, y + 2, 1, vertical_h, p.button_highlight);
-        } else {
-            layer.fill_rect(x + 2, y + 1, horizontal_w, 1, p.button_inner_edge);
-            layer.fill_rect(x + 1, y + 2, 1, vertical_h, p.button_inner_edge);
-            layer.fill_rect(x + 2, y + 2, horizontal_w, 1, p.button_highlight);
-            layer.fill_rect(x + 2, y + 2, 1, vertical_h, p.button_highlight);
-            layer.fill_rect(x + 2, y + h - 2, horizontal_w, 1, p.button_shadow_1);
-            layer.fill_rect(x + w - 2, y + 2, 1, vertical_h, p.button_shadow_1);
-            layer.fill_rect(x + 2, y + h - 3, horizontal_w, 1, p.button_shadow_2);
-            layer.fill_rect(x + w - 3, y + 2, 1, vertical_h, p.button_shadow_2);
-        }
-    }
+    fill_ui_rounded_rect(layer, x, y, w, h, p.button_radius, color);
 }
 
 pub(crate) fn ui_button_face(active: bool, selected: bool, hover: bool, primary: bool) -> Color {
     let p = palette();
     if is_xiao() {
+        if primary {
+            return if active {
+                Color::rgb(0x06, 0x5A, 0xC9)
+            } else if hover {
+                Color::rgb(0x2A, 0x94, 0xFF)
+            } else {
+                p.warp4_primary
+            };
+        }
         return if active {
-            Color::rgb(190, 190, 190)
+            Color::rgb(0x48, 0x48, 0x4A)
         } else if hover {
-            Color::rgb(235, 235, 235)
+            Color::rgb(0x48, 0x48, 0x4A)
         } else {
             p.button_face
         };

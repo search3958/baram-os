@@ -158,7 +158,7 @@ build_xiao() {
     # Nano but fails its final 9 KiB allocation; 22.352M reaches the kiosk.
     # Keep an explicit QEMU_RAM override available for diagnostics.
     if [ "$QEMU_RAM_WAS_SET" -eq 0 ]; then
-        QEMU_RAM="22.352M"
+        QEMU_RAM="23M"
     fi
     local xiao_target="$SCRIPT_DIR/target/aarch64-unknown-uefi/release/xiao.efi"
     local xiao_efi="$TARGET_DIR/bootaa64-xiao.efi"

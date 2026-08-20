@@ -298,7 +298,11 @@ pub(crate) fn text_color(n: &Node) -> Color {
         return palette().warp4_primary;
     }
     if n.is("EditText") || n.is("AutoCompleteTextView") || n.is("MultiAutoCompleteTextView") {
-        return WARP4_BLACK;
+        return if is_xiao() {
+            palette().warp3_text
+        } else {
+            WARP4_BLACK
+        };
     }
     let style = n.attr("style");
     if style.contains("SectionDescription") {

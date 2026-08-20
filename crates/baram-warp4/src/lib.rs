@@ -59,9 +59,10 @@ const WARP4_WHITE: Color = Color::rgb(255, 255, 255);
 const WARP4_BLACK: Color = Color::rgb(0, 0, 0);
 const SCROLLBAR_RADIUS: usize = 3;
 
-// The renderer selects the visual profile after boot. Xiao keeps a hard,
-// pixel-snapped control language; the normal profile retains smooth native
-// primitives. Both profiles use the same parser, layout, and paint pipeline.
+// The renderer selects the visual profile after boot. Xiao uses the same
+// smooth rounded primitives as the normal renderer, with a compact dark
+// palette and solid control faces. Both profiles use the same parser, layout,
+// and paint pipeline.
 
 fn title_bar_h() -> i32 {
     ui_px(config::get_usize("ui-theme/window/title_bar_h", 30) as i32)

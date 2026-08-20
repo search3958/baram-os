@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:baram="http://schemas.baram.com/apk/res/baram" baram:layout_width="fill_parent" baram:layout_height="fill_parent" baram:fillViewport="false">
 <LinearLayout xmlns:baram="http://schemas.baram.com/apk/res/baram" baram:layout_width="fill_parent" baram:layout_height="fill_parent" baram:orientation="vertical" baram:padding="16dip">
-  <TextView baram:layout_width="fill_parent" baram:layout_height="wrap_content" baram:text="計算機" baram:textSize="24sp" />
   <TextView baram:id="@+id/expression" baram:layout_width="fill_parent" baram:layout_height="40dip" baram:layout_marginTop="16dip" baram:text="" baram:gravity="right|center_vertical" />
   <TextView baram:id="@+id/result" baram:layout_width="fill_parent" baram:layout_height="64dip" baram:text="0" baram:textSize="32sp" baram:gravity="right|center_vertical" />
   <LinearLayout baram:layout_width="fill_parent" baram:layout_height="0dip" baram:layout_weight="1" baram:orientation="vertical">

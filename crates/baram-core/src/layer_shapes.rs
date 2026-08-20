@@ -134,6 +134,87 @@ impl LayerSystem {
         self.fill_rounded_rect_with_polygon(x, y, w, h, r, c, poly);
     }
 
+    /// Fill a rounded rectangle with direct circular-corner coverage.
+    ///
+    /// This is intentionally separate from the cached squircle path. Xiao's
+    /// 128x64 surface makes a low-resolution polygon edge very obvious, so
+    /// its small controls use 8x8 subpixel samples against the exact rounded
+    /// rectangle instead of a short polygon approximation.
+    pub fn fill_rounded_rect_aa(
+        &mut self,
+        x: usize,
+        y: usize,
+        w: usize,
+        h: usize,
+        r: usize,
+        c: Color,
+    ) {
+        if w == 0 || h == 0 {
+            return;
+        }
+        let r = r.min(w / 2).min(h / 2);
+        if r == 0 {
+            self.fill_rect(x, y, w, h, c);
+            return;
+        }
+        let Some((x0, y0, x1, y1)) =
+            self.clipped_rect(x, y, x.saturating_add(w), y.saturating_add(h))
+        else {
+            return;
+        };
+
+        const SAMPLES: usize = 8;
+        const SAMPLE_COUNT: f32 = (SAMPLES * SAMPLES) as f32;
+        let radius = r as f32;
+        let right_inner = w as f32 - radius;
+        let bottom_inner = h as f32 - radius;
+        let value = c.0;
+        self.mark_dirty_rect(x0, y0, x1, y1);
+
+        for py in y0..y1 {
+            let row = py * self.width;
+            let local_y = py.saturating_sub(y);
+            for px in x0..x1 {
+                let local_x = px.saturating_sub(x);
+
+                // Pixels in either central strip cannot intersect a corner,
+                // so keep the fast opaque fill for the bulk of the control.
+                if (local_x >= r && local_x + 1 <= w - r)
+                    || (local_y >= r && local_y + 1 <= h - r)
+                {
+                    self.buf[row + px] = value;
+                    continue;
+                }
+
+                let mut hits = 0usize;
+                for sy in 0..SAMPLES {
+                    let sample_y = local_y as f32 + (sy as f32 + 0.5) / SAMPLES as f32;
+                    let nearest_y = sample_y.clamp(radius, bottom_inner);
+                    let dy = sample_y - nearest_y;
+                    for sx in 0..SAMPLES {
+                        let sample_x =
+                            local_x as f32 + (sx as f32 + 0.5) / SAMPLES as f32;
+                        let nearest_x = sample_x.clamp(radius, right_inner);
+                        let dx = sample_x - nearest_x;
+                        if dx * dx + dy * dy <= radius * radius {
+                            hits += 1;
+                        }
+                    }
+                }
+
+                if hits == SAMPLES * SAMPLES {
+                    self.buf[row + px] = value;
+                } else if hits != 0 {
+                    self.buf[row + px] = Self::blend_alpha(
+                        self.buf[row + px],
+                        value,
+                        hits as f32 / SAMPLE_COUNT,
+                    );
+                }
+            }
+        }
+    }
+
     /// Fill a rounded rectangle using caller-owned geometry. This variant is
     /// allocation-free and can be used by independent AP rendering jobs.
     pub fn fill_rounded_rect_with_polygon(
@@ -379,4 +460,3 @@ impl LayerSystem {
     }
 
 }
-
