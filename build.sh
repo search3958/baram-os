@@ -12,7 +12,8 @@
 #    5. Uses the bundled BaramOS AArch64 UEFI firmware, built without the
 #       upstream AAVMF 128 MiB minimum-memory assertion.
 #    6. Boots the OS in qemu-system-aarch64 using the QEMU `virt` machine
-#       (Cortex-A72, 1 GiB RAM, USB mouse + keyboard, VGA display).
+#       (Cortex-A72, normal memory or the Xiao 22.352 MiB profile, USB mouse +
+#       keyboard, 128x64 Xiao display).
 #
 #  Tested on:
 #    * macOS 13+  (Intel + Apple Silicon) with Homebrew qemu/rust
@@ -55,7 +56,11 @@ if [ "${QEMU_RAM+x}" = x ]; then
     QEMU_RAM_WAS_SET=1
 fi
 QEMU_RAM="${QEMU_RAM:-0.15G}"
-QEMU_DISPLAY="${QEMU_DISPLAY:-default,zoom-to-fit=on}"
+QEMU_DISPLAY_WAS_SET=0
+if [ "${QEMU_DISPLAY+x}" = x ]; then
+    QEMU_DISPLAY_WAS_SET=1
+fi
+QEMU_DISPLAY="${QEMU_DISPLAY:-}"
 # Where the firmware/OS serial output goes.  Default is `stdio` so you can
 # see boot logs in the terminal.  Use `null` to silence serial.
 QEMU_SERIAL="${QEMU_SERIAL:-stdio}"
@@ -74,6 +79,16 @@ die()  { err "$*"; exit 1; }
 OS="$(uname -s)"
 ARCH="$(uname -m)"
 log "Detected OS=$OS ARCH=$ARCH"
+
+# `default` is an alias for the host GUI backend, but QEMU does not accept
+# backend options after that alias. Resolve the backend before launch so the
+# requested zoom-to-fit setting is passed in a form QEMU actually supports.
+if [ "$QEMU_DISPLAY_WAS_SET" -eq 0 ]; then
+    case "$OS" in
+        Darwin) QEMU_DISPLAY="cocoa,zoom-to-fit=on" ;;
+        *) QEMU_DISPLAY="gtk,zoom-to-fit=on" ;;
+    esac
+fi
 
 # ---------- step 1: Rust toolchain ----------
 require_cmd() {
@@ -139,17 +154,21 @@ build_efi() {
 build_xiao() {
     XIAO_MODE=1
     FIRMWARE_PATH="$XIAO_FIRMWARE_PATH"
-    # Xiao uses the smallest known-good guest size. Keep an explicit
-    # QEMU_RAM override available for diagnostics and future hardware.
+    # Xiao uses the smallest empirically bootable guest size. 22.3515M reaches
+    # Nano but fails its final 9 KiB allocation; 22.352M reaches the kiosk.
+    # Keep an explicit QEMU_RAM override available for diagnostics.
     if [ "$QEMU_RAM_WAS_SET" -eq 0 ]; then
-        # The Xiao firmware/OS path is verified at 24 MiB with GOP, FAT,
-        # virtio-blk, keyboard, and mouse support. Keep overrides available
-        # for lower-memory experiments without making the default unsafe.
-        QEMU_RAM="20M"
+        QEMU_RAM="22.352M"
     fi
     local xiao_target="$SCRIPT_DIR/target/aarch64-unknown-uefi/release/xiao.efi"
     local xiao_efi="$TARGET_DIR/bootaa64-xiao.efi"
     log "Building ARM64 Xiao kiosk system ..."
+    # Xiao is the memory-constrained image. Use whole-program LTO and size
+    # optimization only for this branch; the normal system keeps its normal
+    # release profile and feature set.
+    CARGO_PROFILE_RELEASE_LTO=fat \
+    CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 \
+    CARGO_PROFILE_RELEASE_OPT_LEVEL=z \
     cargo +nightly build --release --target aarch64-unknown-uefi \
         --manifest-path "$SCRIPT_DIR/crates/baram-xiao/Cargo.toml"
     test -f "$xiao_target" || die "Xiao build did not produce $xiao_target"
@@ -460,7 +479,7 @@ Install QEMU:
     # QEMU args explanation:
     #   -machine virt            : ARM virt machine (matches Raspberry Pi UEFI class)
     #   -cpu cortex-a72          : 64-bit ARM core (same family as Pi 4)
-    #   -m 1G                    : 1 GiB RAM
+    #   -m <profile>             : normal desktop RAM or Xiao's 22.352 MiB target
     #   -bios                    : BaramOS UEFI firmware with no 128 MiB floor
     #   -drive ...,format=raw    : FAT image as removable media (bootable)
     #   -device ramfb            : BaramOS firmware framebuffer

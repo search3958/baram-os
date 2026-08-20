@@ -99,16 +99,21 @@ fn now_ns() -> u64 {
 }
 
 // UEFI Simple Text Input scan codes: Up=1, Down=2, Right=3, Left=4.
-// Xiao intentionally treats all four arrows as document scrolling so the
-// kiosk remains usable without adding focus/navigation machinery.
+// Horizontal arrows navigate controls; vertical arrows scroll the current
+// document. Space activates the focused control, without XML changes.
 fn handle_kiosk_key(engine: &mut Warp4Engine, event: NanoKeyEvent) -> bool {
     if let Some(key) = event.printable {
+        if key == b' ' && engine.activate_focused() {
+            return true;
+        }
         engine.handle_key(key);
         return true;
     }
     match event.scancode {
-        1 | 4 => engine.scroll_by(-24),
-        2 | 3 => engine.scroll_by(24),
+        1 => engine.scroll_by(-24),
+        2 => engine.scroll_by(24),
+        3 => engine.focus_direction(1),
+        4 => engine.focus_direction(-1),
         _ => false,
     }
 }
@@ -237,6 +242,13 @@ pub fn run(mut nano: NanoSystem) -> Status {
             list.as_mut().unwrap().set_visible(&id, false);
         }
     }
+    // Resolve the first layout before accepting navigation input. This makes
+    // a right-arrow pressed immediately after boot deterministic instead of
+    // focusing a zero-sized, not-yet-laid-out node.
+    if let Some(list) = list.as_mut() {
+        list.draw_to_layer(&mut layer, 0, 0);
+        layer.flush(&mut screen);
+    }
     let mut selected: Option<Warp4Engine> = None;
     let mut x = (screen.width() / 2) as i32;
     let mut y = (screen.height() / 2) as i32;
@@ -293,6 +305,11 @@ pub fn run(mut nano: NanoSystem) -> Status {
                         // single cache for all repaint and scroll frames.
                         let mut engine = Warp4Engine::new(&entry.name);
                         engine.set_chrome_visible(false);
+                        // Resolve the selected app before accepting its first
+                        // key event. This also primes the visible glyph cache
+                        // while the launcher is still on screen.
+                        engine.draw_to_layer(&mut layer, 0, 0);
+                        engine.start_transition();
                         selected = Some(engine);
                         // The kiosk is single-task. Release the launcher
                         // engine before the selected app becomes active.
