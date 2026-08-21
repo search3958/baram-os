@@ -12,7 +12,11 @@
 #    5. Uses the bundled BaramOS AArch64 UEFI firmware, built without the
 #       upstream AAVMF 128 MiB minimum-memory assertion.
 #    6. Boots the OS in qemu-system-aarch64 using the QEMU `virt` machine
+<<<<<<< HEAD
 #       (Cortex-A72, normal memory or the Xiao 7 MiB profile, virtio input +
+=======
+#       (Cortex-A72, normal memory or the Xiao 22.352 MiB profile, USB mouse +
+>>>>>>> parent of f6d26bd2 (20MBでの起動)
 #       keyboard, 128x64 Xiao display).
 #
 #  Tested on:
@@ -154,6 +158,7 @@ build_efi() {
 build_xiao() {
     XIAO_MODE=1
     FIRMWARE_PATH="$XIAO_FIRMWARE_PATH"
+<<<<<<< HEAD
     # Keep Xiao's FAT volume small as well: FAT32 metadata/cache allocations
     # scale with the volume size during UEFI startup.
     IMAGE_SIZE_MB=8
@@ -162,6 +167,13 @@ build_xiao() {
     # Keep an explicit QEMU_RAM override available for diagnostics.
     if [ "$QEMU_RAM_WAS_SET" -eq 0 ]; then
         QEMU_RAM="8M"
+=======
+    # Xiao uses the smallest empirically bootable guest size. 22.3515M reaches
+    # Nano but fails its final 9 KiB allocation; 22.352M reaches the kiosk.
+    # Keep an explicit QEMU_RAM override available for diagnostics.
+    if [ "$QEMU_RAM_WAS_SET" -eq 0 ]; then
+        QEMU_RAM="23M"
+>>>>>>> parent of f6d26bd2 (20MBでの起動)
     fi
     local xiao_target="$SCRIPT_DIR/target/aarch64-unknown-uefi/release/xiao.efi"
     local xiao_efi="$TARGET_DIR/bootaa64-xiao.efi"

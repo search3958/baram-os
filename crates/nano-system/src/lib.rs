@@ -925,14 +925,17 @@ fn fill_rect(
         }
     }
 }
+use uefi::proto::console::text::Output;
 
 fn log_phase(message: &uefi::CStr16) {
-    uefi::system::with_stdout(|stdout| {
-        let _ = stdout.output_string(message);
-        let _ = stdout.output_string(uefi::cstr16!("\r\n"));
-    });
+    // Outputプロトコル（stdout）のハンドルが存在するか確認し、ある場合のみwith_stdoutを呼ぶ
+    if uefi::boot::get_handle_for_protocol::<Output>().is_ok() {
+        uefi::system::with_stdout(|stdout| {
+            let _ = stdout.output_string(message);
+            let _ = stdout.output_string(uefi::cstr16!("\r\n"));
+        });
+    }
 }
-
 struct PanicWriter {
     bytes: [u8; 384],
     len: usize,
