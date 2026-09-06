@@ -1,0 +1,12 @@
+[target.xtensa-esp32s3-none-elf]
+runner = "espflash"
+rustflags = [
+    "-C", "linker=xtensa-esp32s3-none-elf-gcc",
+]
+
+[build]
+target = "xtensa-esp32s3-none-elf"
+
+[unstable]
+build-std = ["core", "alloc"]
+build-std-features = ["compiler-builtins-mem"]
