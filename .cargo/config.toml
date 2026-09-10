@@ -1,0 +1,22 @@
+[target.xtensa-esp32s3-none-elf]
+runner = "espflash"
+rustflags = [
+    "-C", "linker=xtensa-esp32s3-none-elf-gcc",
+]
+
+[target.'cfg(all(target_arch = "xtensa", target_os = "none"))']
+rustflags = [
+    "-C", "linker=xtensa-esp32s3-none-elf-gcc",
+]
+
+[target.uefi]
+runner = "qemu-system-x86_64"
+rustflags = [
+    "-C", "linker=x86_64-unknown-linux-gnu-gcc",
+]
+
+[build]
+target = "xtensa-esp32s3-none-elf"
+
+[env]
+ESP_HAL_BUILD = "1"

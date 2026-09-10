@@ -1,15 +1,38 @@
 use crate::color::Color;
+use alloc::vec::Vec;
 use core::ptr;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PixelFormat {
+    Rgb,
+    Bgr,
+    Bitmask,
+}
+
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+pub struct FramebufferInfo {
+    pub base: usize,
+    pub size: usize,
+    pub width: usize,
+    pub height: usize,
+    pub stride: usize,
+    pub pixel_format: PixelFormat,
+}
+
+#[cfg(feature = "uefi")]
 use uefi::boot::{self, ScopedProtocol};
-use uefi::proto::console::gop::{GraphicsOutput, PixelFormat};
+#[cfg(feature = "uefi")]
+use uefi::proto::console::gop::{GraphicsOutput, PixelFormat as UefiPixelFormat};
+#[cfg(feature = "uefi")]
 use uefi::proto::unsafe_protocol;
+#[cfg(feature = "uefi")]
 use uefi::Status;
 
+#[cfg(feature = "uefi")]
 const EFI_MEMORY_WC: u64 = 0x2;
 
-/// PI CPU Architecture Protocol. Firmware implements this using the platform's
-/// PAT/MTRR (x86) or translation attributes (AArch64), including the required
-/// cache/TLB synchronization across processors.
+#[cfg(feature = "uefi")]
 #[repr(C)]
 #[unsafe_protocol("26baccb1-6f42-11d4-bce7-0080c73c8881")]
 struct CpuArchProtocol {
@@ -30,6 +53,7 @@ struct CpuArchProtocol {
     dma_buffer_alignment: u32,
 }
 
+#[cfg(feature = "uefi")]
 fn enable_framebuffer_write_combining(base: usize, size: usize) -> bool {
     let Ok(handle) = boot::get_handle_for_protocol::<CpuArchProtocol>() else {
         return false;
@@ -49,20 +73,20 @@ fn enable_framebuffer_write_combining(base: usize, size: usize) -> bool {
     }
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "uefi", target_arch = "x86_64"))]
 #[inline]
 fn avx2_available() -> bool {
     use core::arch::x86_64::{__cpuid, __cpuid_count, _xgetbv};
     unsafe {
         let leaf1 = __cpuid(1);
-        let required = (1 << 28) | (1 << 27); // AVX + OSXSAVE
+        let required = (1 << 28) | (1 << 27);
         leaf1.ecx & required == required
             && (_xgetbv(0) & 0x6) == 0x6
             && (__cpuid_count(7, 0).ebx & (1 << 5)) != 0
     }
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "uefi", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 unsafe fn copy_swap_rb_avx2(src: *const u32, dst: *mut u32, len: usize, wc: bool) {
     use core::arch::x86_64::*;
@@ -80,8 +104,6 @@ unsafe fn copy_swap_rb_avx2(src: *const u32, dst: *mut u32, len: usize, wc: bool
                 _mm256_slli_epi32(_mm256_and_si256(p, blue), 16),
             ),
         );
-        // A normal contiguous store is write-combined by the WC memory type.
-        // VMOVNTDQ currently crashes LLVM's x86 UEFI legalizer under fat LTO.
         _mm256_storeu_si256(dst.add(i) as *mut __m256i, out);
         i += 8;
     }
@@ -94,7 +116,7 @@ unsafe fn copy_swap_rb_avx2(src: *const u32, dst: *mut u32, len: usize, wc: bool
     }
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "uefi", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 unsafe fn copy_pixels_avx2(src: *const u32, dst: *mut u32, len: usize, wc: bool) {
     use core::arch::x86_64::*;
@@ -110,6 +132,7 @@ unsafe fn copy_pixels_avx2(src: *const u32, dst: *mut u32, len: usize, wc: bool)
     }
 }
 
+#[cfg(feature = "uefi")]
 #[inline]
 unsafe fn copy_swap_rb(
     src: *const u32,
@@ -183,52 +206,56 @@ unsafe fn copy_swap_rb(
     }
 }
 
-#[derive(Clone, Copy)]
-#[allow(dead_code)]
-pub struct FramebufferInfo {
-    pub base: usize,
-    pub size: usize,
-    pub width: usize,
-    pub height: usize,
-    pub stride: usize,
-    pub pixel_format: PixelFormat,
-}
-
+#[cfg(feature = "uefi")]
 pub struct Screen {
     info: FramebufferInfo,
+    layer_buffer: Option<Vec<u32>>,
     fb_ptr: *mut u8,
     write_combining: bool,
     avx2: bool,
     _gop: ScopedProtocol<GraphicsOutput>,
 }
 
+#[cfg(feature = "esp32s3")]
+pub struct Screen {
+    info: FramebufferInfo,
+    layer_buffer: Option<Vec<u32>>,
+    fb_ptr: *mut u8,
+}
+
+#[cfg(feature = "uefi")]
 unsafe impl Send for Screen {}
+#[cfg(feature = "uefi")]
+unsafe impl Sync for Screen {}
+#[cfg(feature = "esp32s3")]
+unsafe impl Send for Screen {}
+#[cfg(feature = "esp32s3")]
 unsafe impl Sync for Screen {}
 
+#[cfg(feature = "uefi")]
 impl Screen {
     pub fn take() -> Result<Screen, Status> {
+        Self::take_with_target(1280, 720)
+    }
+
+    pub fn take_with_target(target_w: usize, target_h: usize) -> Result<Screen, Status> {
         let handle =
             boot::get_handle_for_protocol::<GraphicsOutput>().map_err(|_| Status::UNSUPPORTED)?;
         let mut gop = boot::open_protocol_exclusive::<GraphicsOutput>(handle)
             .map_err(|_| Status::UNSUPPORTED)?;
 
-        // The compositor is tuned for a 720p working set.  Picking the
-        // firmware's largest mode (often 4K) multiplies every software blend
-        // and framebuffer write by up to 9x with no UI benefit.
-        const TARGET_W: usize = 1280;
-        const TARGET_H: usize = 720;
         let mut best_score = usize::MAX;
         let mut best_mode: Option<uefi::proto::console::gop::Mode> = None;
         for mode in gop.modes() {
             let (w, h) = mode.info().resolution();
             let area_delta = w
-                .abs_diff(TARGET_W)
-                .saturating_mul(TARGET_H)
-                .saturating_add(h.abs_diff(TARGET_H).saturating_mul(TARGET_W));
+                .abs_diff(target_w)
+                .saturating_mul(target_h)
+                .saturating_add(h.abs_diff(target_h).saturating_mul(target_w));
             let aspect_delta = w
-                .saturating_mul(TARGET_H)
-                .abs_diff(h.saturating_mul(TARGET_W));
-            let undersized_penalty = if w < TARGET_W || h < TARGET_H {
+                .saturating_mul(target_h)
+                .abs_diff(h.saturating_mul(target_w));
+            let undersized_penalty = if w < target_w || h < target_h {
                 usize::MAX / 4
             } else {
                 0
@@ -267,15 +294,50 @@ impl Screen {
                 width: w,
                 height: h,
                 stride,
-                pixel_format: pf,
+                pixel_format: PixelFormat::from_uefi(pf),
             },
+            layer_buffer: None,
             fb_ptr: fb_base as *mut u8,
             write_combining,
             avx2,
             _gop: gop,
         })
     }
+}
 
+#[cfg(feature = "esp32s3")]
+impl Screen {
+    pub fn take() -> Result<Screen, esp_hal::display::Error> {
+        Self::take_with_target(1280, 720)
+    }
+
+    pub fn take_with_target(_target_w: usize, _target_h: usize) -> Result<Screen, esp_hal::display::Error> {
+        use esp_hal::display::Display;
+
+        let display = esp_hal::display::Display::new(
+            esp_hal::peripherals::LCD_CAM,
+            esp_hal::peripherals::SPI2,
+        );
+        let info = display.info();
+        let fb_ptr = display.framebuffer_ptr();
+        let fb_size = display.framebuffer_size();
+
+        Ok(Screen {
+            info: FramebufferInfo {
+                base: fb_ptr as usize,
+                size: fb_size,
+                width: info.width,
+                height: info.height,
+                stride: info.stride,
+                pixel_format: PixelFormat::from_esp(info.pixel_format),
+            },
+            layer_buffer: None,
+            fb_ptr: fb_ptr as *mut u8,
+        })
+    }
+}
+
+impl Screen {
     pub fn width(&self) -> usize {
         self.info.width
     }
@@ -285,6 +347,14 @@ impl Screen {
     #[allow(dead_code)]
     pub fn info(&self) -> FramebufferInfo {
         self.info
+    }
+
+    pub(crate) fn layer_buffer_ptr(&mut self) -> (*mut u32, usize) {
+        let len = self.info.width.saturating_mul(self.info.height);
+        let buffer = self
+            .layer_buffer
+            .get_or_insert_with(|| alloc::vec![Color::BG.0; len]);
+        (buffer.as_mut_ptr(), buffer.len())
     }
 
     pub fn clear(&mut self, c: Color) {
@@ -379,10 +449,12 @@ impl Screen {
         }
     }
 
+    #[cfg(feature = "uefi")]
     pub fn flush_layer_row(&mut self, y: usize, row: &[u32]) {
         self.flush_layer_row_range(y, 0, row);
     }
 
+    #[cfg(feature = "uefi")]
     pub fn flush_layer_row_range(&mut self, y: usize, x_offset: usize, row: &[u32]) {
         if y >= self.info.height || x_offset >= self.info.width {
             return;
@@ -420,6 +492,37 @@ impl Screen {
         }
     }
 
+    #[cfg(feature = "esp32s3")]
+    pub fn flush_layer_row(&mut self, y: usize, row: &[u32]) {
+        self.flush_layer_row_range(y, 0, row);
+    }
+
+    #[cfg(feature = "esp32s3")]
+    pub fn flush_layer_row_range(&mut self, y: usize, x_offset: usize, row: &[u32]) {
+        if y >= self.info.height || x_offset >= self.info.width {
+            return;
+        }
+        let pf = self.info.pixel_format;
+        let stride = self.info.stride;
+        let base = self.fb_ptr;
+        let n = row.len().min(self.info.width.saturating_sub(x_offset));
+        let off_base = (y * stride + x_offset) * 4;
+        match pf {
+            PixelFormat::Rgb => unsafe {
+                ptr::copy_nonoverlapping(row.as_ptr(), base.add(off_base) as *mut u32, n);
+            },
+            PixelFormat::Bgr => unsafe {
+                ptr::copy_nonoverlapping(row.as_ptr(), base.add(off_base) as *mut u32, n);
+            },
+            PixelFormat::Bitmask => unsafe {
+                ptr::copy_nonoverlapping(row.as_ptr(), base.add(off_base) as *mut u32, n);
+            },
+            _ => unsafe {
+                ptr::copy_nonoverlapping(row.as_ptr(), base.add(off_base) as *mut u32, n);
+            },
+        }
+    }
+
     pub fn rect_outline(&mut self, x: usize, y: usize, w: usize, h: usize, c: Color) {
         if w == 0 || h == 0 {
             return;
@@ -428,5 +531,52 @@ impl Screen {
         self.fill_rect(x, y + h - 1, w, 1, c);
         self.fill_rect(x, y, 1, h, c);
         self.fill_rect(x + w - 1, y, 1, h, c);
+    }
+}
+
+#[cfg(feature = "uefi")]
+impl PixelFormat {
+    pub(crate) fn from_uefi(pf: UefiPixelFormat) -> Self {
+        match pf {
+            UefiPixelFormat::Rgb => PixelFormat::Rgb,
+            UefiPixelFormat::Bgr => PixelFormat::Bgr,
+            UefiPixelFormat::Bitmask => PixelFormat::Bitmask,
+            _ => PixelFormat::Bitmask,
+        }
+    }
+}
+
+#[cfg(feature = "esp32s3")]
+impl PixelFormat {
+    pub(crate) fn from_esp(pf: esp_hal::display::PixelFormat) -> Self {
+        match pf {
+            esp_hal::display::PixelFormat::Rgb => PixelFormat::Rgb,
+            esp_hal::display::PixelFormat::Bgr => PixelFormat::Bgr,
+            esp_hal::display::PixelFormat::Bitmask => PixelFormat::Bitmask,
+        }
+    }
+}
+
+#[cfg(feature = "esp32s3")]
+mod esp32s3_display {
+    use esp_hal::display::{Display, PixelFormat as EspPixelFormat};
+
+    pub struct DisplayInfo {
+        pub width: usize,
+        pub height: usize,
+        pub stride: usize,
+        pub pixel_format: PixelFormat,
+    }
+
+    impl DisplayInfo {
+        pub fn new(display: &impl Display) -> Self {
+            let info = display.info();
+            DisplayInfo {
+                width: info.width,
+                height: info.height,
+                stride: info.stride,
+                pixel_format: PixelFormat::from_esp(info.pixel_format),
+            }
+        }
     }
 }

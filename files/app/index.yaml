@@ -2,6 +2,11 @@ autostart:
   - settings.w4a
 
 apps:
+  calc.w4a:
+    icon: calc.png
+    type: warp-4
+    title: 計算機
+    tag: calc
   settings.w4a:
     icon: settings.png
     type: warp-4
@@ -35,11 +40,6 @@ apps:
     type: warp-4
     title: タスクマネージャー
     tag: task manager
-  calc.w4a:
-    icon: calc.png
-    type: warp-4
-    title: 計算機
-    tag: calc
   webdemo.html:
    icon: html5.png
    type: html-1

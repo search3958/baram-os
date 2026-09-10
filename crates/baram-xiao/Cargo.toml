@@ -1,0 +1,23 @@
+[package]
+name = "baram-xiao"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "xiao"
+path = "src/main.rs"
+
+[features]
+default = ["uefi"]
+uefi = ["dep:uefi", "baram-bsd/uefi", "baram-core/uefi", "baram-font/uefi", "baram-warp4/uefi", "nano-system/uefi"]
+esp32s3 = ["dep:esp-hal", "embedded-hal", "esp-hal/esp32s3", "baram-bsd/esp32s3", "baram-core/esp32s3", "baram-font/esp32s3", "baram-warp4/esp32s3", "nano-system/esp32s3"]
+
+[dependencies]
+baram-bsd = { path = "../baram-bsd", default-features = false }
+baram-core = { path = "../baram-core", default-features = false }
+baram-font = { path = "../baram-font", default-features = false, features = ["bdf"] }
+baram-warp4 = { path = "../baram-warp4", default-features = false, features = ["bdf"] }
+nano-system = { path = "../nano-system", default-features = false }
+uefi = { workspace = true, optional = true }
+esp-hal = { workspace = true, optional = true }
+embedded-hal = { workspace = true, optional = true }

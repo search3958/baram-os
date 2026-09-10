@@ -3,7 +3,16 @@ name = "baram-font"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["ttf"]
+ttf = ["dep:stb_truetype_rust"]
+bdf = []
+uefi = ["dep:uefi"]
+esp32s3 = ["dep:esp-hal", "embedded-hal", "esp-hal/esp32s3"]
+
 [dependencies]
-baram-core = { path = "../baram-core" }
-stb_truetype_rust = { path = "../stb_truetype_rust" }
-uefi = { workspace = true }
+baram-core = { path = "../baram-core", default-features = false }
+stb_truetype_rust = { path = "../stb_truetype_rust", optional = true }
+uefi = { workspace = true, optional = true }
+esp-hal = { workspace = true, optional = true }
+embedded-hal = { workspace = true, optional = true }

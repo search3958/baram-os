@@ -3,7 +3,14 @@ name = "baram-core"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["uefi"]
+uefi = ["dep:uefi", "dep:uefi-raw"]
+esp32s3 = ["dep:esp-hal", "dep:embedded-hal", "esp-hal/esp32s3"]
+
 [dependencies]
-uefi = { workspace = true }
-uefi-raw = { workspace = true }
+uefi = { workspace = true, optional = true }
+uefi-raw = { workspace = true, optional = true }
+esp-hal = { workspace = true, optional = true }
+embedded-hal = { workspace = true, optional = true }
 libm = { workspace = true }

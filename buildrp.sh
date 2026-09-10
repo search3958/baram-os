@@ -98,7 +98,7 @@ ensure_pftf() {
 # ---------- step 3: create FAT image ----------
 make_image() {
     local img="$RUNTIME_DIR/$IMAGE_NAME"
-    local files_archive="$RUNTIME_DIR/files.tar"
+    local files_tree="$RUNTIME_DIR/files-tree"
     local efi="$TARGET_DIR/$PRIMARY_BIN.efi"
     local pftf_dir="$CACHE_DIR"
 
@@ -106,7 +106,7 @@ make_image() {
     [ -f "$pftf_dir/RPI_EFI.fd" ] || die "pftf not found. Run ensure_pftf first."
 
     mkdir -p "$RUNTIME_DIR"
-    "$SCRIPT_DIR/scripts/package_files.sh" "$SCRIPT_DIR/files" "$files_archive"
+    "$SCRIPT_DIR/scripts/package_files.sh" "$SCRIPT_DIR/files" "$files_tree" normal
     rm -f "$img"
 
     log "Creating RPi4 disk image ($IMAGE_SIZE_MB MiB) at $img ..."
@@ -132,6 +132,9 @@ make_image() {
         # BaramOS EFI
         mmd   -i "$img" ::/EFI
         mmd   -i "$img" ::/EFI/BOOT
+        mmd   -i "$img" ::/files
+        mmd   -i "$img" ::/files/app
+        mmd   -i "$img" ::/files/data
         mcopy -i "$img" "$efi" ::/EFI/BOOT/BOOTAA64.EFI
 
         # Subsystem binaries
@@ -149,8 +152,9 @@ make_image() {
             mcopy -i "$img" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
             log "  copied config.xml to /EFI/BOOT/"
         fi
-        mcopy -i "$img" "$files_archive" ::/files.tar
-        log "  copied files.tar to /"
+        mcopy -s -i "$img" "$files_tree/app/." ::/files/app/
+        mcopy -s -i "$img" "$files_tree/data/." ::/files/data/
+        log "  copied files as regular FAT files"
 
         # App files
 
@@ -183,7 +187,7 @@ make_image() {
         cp "$pftf_dir/overlays/"*.dtbo       "$tmp_mount/overlays/"
 
         # BaramOS EFI
-        mkdir -p "$tmp_mount/EFI/BOOT"
+        mkdir -p "$tmp_mount/EFI/BOOT" "$tmp_mount/files/app" "$tmp_mount/files/data"
         cp "$efi" "$tmp_mount/EFI/BOOT/BOOTAA64.EFI"
 
         # Subsystem binaries
@@ -201,8 +205,9 @@ make_image() {
             cp "$SCRIPT_DIR/config.xml" "$tmp_mount/EFI/BOOT/config.xml"
             log "  copied config.xml to /EFI/BOOT/"
         fi
-        cp "$files_archive" "$tmp_mount/files.tar"
-        log "  copied files.tar to /"
+        cp -R "$files_tree/app/." "$tmp_mount/files/app/"
+        cp -R "$files_tree/data/." "$tmp_mount/files/data/"
+        log "  copied files as regular FAT files"
 
         # App files
 

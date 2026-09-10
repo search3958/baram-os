@@ -16,18 +16,46 @@ use core::mem::ManuallyDrop;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering};
 use core::time::Duration;
+
+#[cfg(feature = "uefi")]
 use uefi::boot::{self, ScopedProtocol};
+#[cfg(feature = "uefi")]
 use uefi::proto::console::gop::{GraphicsOutput, PixelFormat};
+#[cfg(feature = "uefi")]
 use uefi::proto::console::pointer::Pointer;
+#[cfg(feature = "uefi")]
 use uefi::proto::console::serial::Serial;
+#[cfg(feature = "uefi")]
 use uefi::proto::console::text::{Input, Key};
+#[cfg(feature = "uefi")]
 use uefi::proto::unsafe_protocol;
+#[cfg(feature = "uefi")]
 use uefi::proto::usb::io::{ControlTransfer, UsbIo};
+#[cfg(feature = "uefi")]
 use uefi::{boot::TimerTrigger, Status};
+#[cfg(feature = "uefi")]
 use uefi_raw::protocol::console::AbsolutePointerProtocol;
+#[cfg(feature = "uefi")]
 use uefi_raw::protocol::usb::io::UsbIoProtocol;
+#[cfg(feature = "uefi")]
 use uefi_raw::protocol::usb::UsbTransferStatus;
+#[cfg(feature = "uefi")]
 use uefi_raw::table::{boot::EventType, boot::Tpl, runtime::ResetType};
+
+#[cfg(feature = "esp32s3")]
+use esp_hal::delay::Delay;
+#[cfg(feature = "esp32s3")]
+use esp_hal::gpio::{Input, Pin, PinDriver, Pull};
+#[cfg(feature = "esp32s3")]
+use esp_hal::interrupt::InterruptConfigurable;
+#[cfg(feature = "esp32s3")]
+use esp_hal::peripherals::USB_OTG;
+#[cfg(feature = "esp32s3")]
+use esp_hal::timer::TimerGroup;
+#[cfg(feature = "esp32s3")]
+use esp_hal::usb::UsbBus;
+#[cfg(feature = "esp32s3")]
+use embedded_hal::digital::InputPin;
 
 const MAX_ABSOLUTE_SAMPLES_PER_POLL: usize = 2;
 const MAX_SIMPLE_SAMPLES_PER_POLL: usize = 2;
@@ -91,6 +119,7 @@ pub struct NanoInputState {
 }
 
 /// Capabilities validated by Nano System and handed to an executable.
+#[cfg(feature = "uefi")]
 pub struct NanoSystem {
     pub display: NanoDisplayInfo,
     pub input: NanoInputInfo,
@@ -103,17 +132,39 @@ pub struct NanoSystem {
     shift_key: u8,
 }
 
+#[cfg(feature = "esp32s3")]
+pub struct NanoSystem {
+    pub display: NanoDisplayInfo,
+    pub input: NanoInputInfo,
+    pub input_state: NanoInputState,
+    pub timer_handle: Option<esp_hal::timer::TimerHandle<'static, esp_hal::timer::Wdt>>,
+    display_driver: Option<Esp32s3Display>,
+    input_driver: Option<Esp32s3Input>,
+    prefer_simple_pointer: bool,
+    shift_key: u8,
+}
+
+#[cfg(feature = "uefi")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StartError {
     Display(Status),
     Timer,
 }
 
+#[cfg(feature = "esp32s3")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StartError {
+    Display,
+    Timer,
+}
+
+#[cfg(feature = "uefi")]
 #[derive(Debug)]
 #[repr(transparent)]
 #[unsafe_protocol(AbsolutePointerProtocol::GUID)]
 struct AbsolutePointer(AbsolutePointerProtocol);
 
+#[cfg(feature = "uefi")]
 struct BasicAbsoluteDevice {
     pointer: ScopedProtocol<AbsolutePointer>,
     min_x: u64,
@@ -123,11 +174,13 @@ struct BasicAbsoluteDevice {
     last_state: Option<(u64, u64, u32)>,
 }
 
+#[cfg(feature = "uefi")]
 struct BasicSimpleDevice {
     pointer: ScopedProtocol<Pointer>,
     buttons: u8,
 }
 
+#[cfg(feature = "uefi")]
 struct BasicUsbPointer {
     io: ScopedProtocol<UsbIo>,
     endpoint: u8,
@@ -137,6 +190,7 @@ struct BasicUsbPointer {
     buttons: u8,
 }
 
+#[cfg(feature = "uefi")]
 struct AsyncUsbPointerState {
     dx: AtomicI32,
     dy: AtomicI32,
@@ -145,6 +199,7 @@ struct AsyncUsbPointerState {
     pending: AtomicBool,
 }
 
+#[cfg(feature = "uefi")]
 impl AsyncUsbPointerState {
     fn new() -> Self {
         Self {
@@ -169,6 +224,7 @@ impl AsyncUsbPointerState {
     }
 }
 
+#[cfg(feature = "uefi")]
 impl Drop for BasicUsbPointer {
     fn drop(&mut self) {
         if self.async_active {
@@ -184,9 +240,6 @@ impl Drop for BasicUsbPointer {
                     (&mut **self.state as *mut AsyncUsbPointerState).cast(),
                 )
             };
-            // A failed cancellation means firmware may still invoke the
-            // callback. Leak this tiny state block instead of leaving a
-            // dangling callback context.
             if status.is_success() {
                 unsafe { ManuallyDrop::drop(&mut self.state) };
             }
@@ -203,6 +256,7 @@ pub struct NanoBasicPointerEvent {
     pub absolute: Option<(u64, u64, u64, u64)>,
 }
 
+#[cfg(feature = "uefi")]
 /// Retains GOP while the standalone Nano diagnostic is active. The kernel
 /// path never constructs this type, so no diagnostic rendering survives a
 /// handoff to an application.
@@ -217,6 +271,7 @@ pub struct NanoPointerTestDisplay {
     yellow_pixel: u32,
 }
 
+#[cfg(feature = "uefi")]
 impl NanoPointerTestDisplay {
     pub fn initialize(&mut self, x: usize, y: usize, yellow: bool) {
         fill_display(&mut self.graphics, NanoColor::rgb(0x00, 0x00, 0x44));
@@ -253,6 +308,41 @@ impl NanoPointerTestDisplay {
     }
 }
 
+#[cfg(feature = "esp32s3")]
+pub struct NanoPointerTestDisplay {
+    width: usize,
+    height: usize,
+    stride: usize,
+    framebuffer: *mut u32,
+    background_pixel: u32,
+    white_pixel: u32,
+    yellow_pixel: u32,
+}
+
+#[cfg(feature = "esp32s3")]
+impl NanoPointerTestDisplay {
+    pub fn initialize(&mut self, x: usize, y: usize, yellow: bool) {
+        let pixel = if yellow { self.yellow_pixel } else { self.white_pixel };
+        self.fill_rect(x, y, 16, 16, pixel);
+    }
+
+    pub fn update(&mut self, old_x: usize, old_y: usize, x: usize, y: usize, yellow: bool) {
+        let old_pixel = if yellow { self.background_pixel } else { self.white_pixel };
+        self.fill_rect(old_x, old_y, 16, 16, old_pixel);
+        let new_pixel = if yellow { self.yellow_pixel } else { self.white_pixel };
+        self.fill_rect(x, y, 16, 16, new_pixel);
+    }
+
+    fn fill_rect(&mut self, x: usize, y: usize, width: usize, height: usize, pixel: u32) {
+        let base = self.framebuffer as *mut u32;
+        for py in y..y.saturating_add(height).min(self.height) {
+            for px in x..x.saturating_add(width).min(self.width) {
+                unsafe { ptr::write_volatile(base.add(py * self.stride + px), pixel) };
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NanoKeyEvent {
     pub printable: Option<u8>,
@@ -261,6 +351,7 @@ pub struct NanoKeyEvent {
     pub raw_key: u8,
 }
 
+#[cfg(feature = "uefi")]
 impl AbsolutePointer {
     fn get_state(&mut self) -> Option<uefi_raw::protocol::console::AbsolutePointerState> {
         let mut state = uefi_raw::protocol::console::AbsolutePointerState::default();
@@ -276,60 +367,180 @@ impl AbsolutePointer {
     }
 }
 
+#[cfg(feature = "esp32s3")]
+struct Esp32s3Display {
+    width: usize,
+    height: usize,
+    stride: usize,
+    framebuffer: *mut u32,
+}
+
+#[cfg(feature = "esp32s3")]
+struct Esp32s3Input {
+    keyboard_available: bool,
+    pointer_available: bool,
+    absolute_pointer_available: bool,
+}
+
+#[cfg(feature = "esp32s3")]
+impl Esp32s3Display {
+    fn new(width: usize, height: usize, stride: usize) -> Self {
+        Self {
+            width,
+            height,
+            stride,
+            framebuffer: ptr::null_mut(),
+        }
+    }
+
+    fn fill(&mut self, color: NanoColor) {
+        let pixel = color.0;
+        let base = self.framebuffer as *mut u32;
+        for y in 0..self.height {
+            for x in 0..self.width {
+                unsafe { ptr::write_volatile(base.add(y * self.stride + x), pixel) };
+            }
+        }
+    }
+
+    fn update_rect(
+        &mut self,
+        old_x: usize,
+        old_y: usize,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+        pixel: u32,
+    ) {
+        let base = self.framebuffer as *mut u32;
+        for py in y..y.saturating_add(height).min(self.height) {
+            for px in x..x.saturating_add(width).min(self.width) {
+                unsafe { ptr::write_volatile(base.add(py * self.stride + px), pixel) };
+            }
+        }
+    }
+}
+
+#[cfg(feature = "esp32s3")]
+impl Esp32s3Input {
+    fn new() -> Self {
+        Self {
+            keyboard_available: false,
+            pointer_available: false,
+            absolute_pointer_available: false,
+        }
+    }
+}
+
 impl NanoSystem {
     /// Initialize the freestanding platform layer without BaramOS-specific
     /// configuration, fonts, filesystems or drivers.
     pub fn start(clear_color: NanoColor) -> Result<Self, StartError> {
-        let _ = uefi::helpers::init();
-        let _ = boot::set_watchdog_timer(0, 0, None);
+        Self::start_with_target(clear_color, 1280, 720)
+    }
 
-        let mut graphics = open_display().map_err(StartError::Display)?;
-        choose_working_mode(&mut graphics);
-        let display = display_info(&graphics);
-        fill_display(&mut graphics, clear_color);
+    /// Initialize Nano System using the caller's preferred working resolution.
+    /// The selected mode is reported back in `display`, so callers can use the
+    /// actual firmware-supported size instead of assuming the requested one.
+    pub fn start_with_target(
+        clear_color: NanoColor,
+        target_width: usize,
+        target_height: usize,
+    ) -> Result<Self, StartError> {
+        #[cfg(feature = "uefi")]
+        {
+            let _ = uefi::helpers::init();
+            let _ = boot::set_watchdog_timer(0, 0, None);
 
-        log_phase(uefi::cstr16!("nano: display ready"));
-        let keyboard_available = boot::get_handle_for_protocol::<Input>().is_ok();
-        if keyboard_available {
-            uefi::system::with_stdin(|input| {
-                let _ = input.reset(false);
-            });
+            let mut graphics = open_display().map_err(StartError::Display)?;
+            choose_working_mode(&mut graphics, target_width, target_height);
+            let display = display_info(&graphics);
+            fill_display(&mut graphics, clear_color);
+
+            log_phase(uefi::cstr16!("nano: display ready"));
+            let keyboard_available = boot::get_handle_for_protocol::<Input>().is_ok();
+            if keyboard_available {
+                uefi::system::with_stdin(|input| {
+                    let _ = input.reset(false);
+                });
+            }
+            let pointer_available = boot::get_handle_for_protocol::<Pointer>().is_ok();
+            let absolute_pointer_available = boot::get_handle_for_protocol::<AbsolutePointer>().is_ok();
+            log_phase(uefi::cstr16!("nano: input capabilities ready"));
+
+            let timer_event = create_periodic_timer(Duration::from_millis(1));
+            log_phase(uefi::cstr16!("nano: handoff ready"));
+
+            let simple_pointers = open_simple_pointers();
+            let absolute_pointers = open_absolute_pointers();
+            let usb_pointers = open_usb_pointers();
+
+            Ok(Self {
+                display,
+                input: NanoInputInfo {
+                    keyboard_available,
+                    pointer_available,
+                    absolute_pointer_available,
+                },
+                input_state: NanoInputState::default(),
+                timer_event,
+                simple_pointers,
+                absolute_pointers,
+                usb_pointers,
+                prefer_simple_pointer: false,
+                shift_key: 0,
+            })
         }
-        let pointer_available = boot::get_handle_for_protocol::<Pointer>().is_ok();
-        let absolute_pointer_available = boot::get_handle_for_protocol::<AbsolutePointer>().is_ok();
-        log_phase(uefi::cstr16!("nano: input capabilities ready"));
 
-        // The timer is a compatibility service for the full OS. Input polling
-        // never waits for it, and a broken firmware timer must not prevent Nano
-        // from starting or make pointer latency depend on timer delivery.
-        let timer_event = create_periodic_timer(Duration::from_millis(1));
-        log_phase(uefi::cstr16!("nano: handoff ready"));
+        #[cfg(feature = "esp32s3")]
+        {
+            let mut display_driver = Esp32s3Display::new(target_width, target_height, target_width * 4);
+            display_driver.fill(clear_color);
 
-        let simple_pointers = open_simple_pointers();
-        let absolute_pointers = open_absolute_pointers();
-        let usb_pointers = open_usb_pointers();
+            let input_driver = Esp32s3Input::new();
+            let input = NanoInputInfo {
+                keyboard_available: input_driver.keyboard_available,
+                pointer_available: input_driver.pointer_available,
+                absolute_pointer_available: input_driver.absolute_pointer_available,
+            };
 
-        Ok(Self {
-            display,
-            input: NanoInputInfo {
-                keyboard_available,
-                pointer_available,
-                absolute_pointer_available,
-            },
-            input_state: NanoInputState::default(),
-            timer_event,
-            simple_pointers,
-            absolute_pointers,
-            usb_pointers,
-            prefer_simple_pointer: false,
-            shift_key: 0,
-        })
+            let timer_handle = create_periodic_timer_esp32s3(Duration::from_millis(1));
+
+            Ok(Self {
+                display: NanoDisplayInfo {
+                    width: target_width,
+                    height: target_height,
+                    stride: target_width * 4,
+                },
+                input,
+                input_state: NanoInputState::default(),
+                timer_handle,
+                display_driver: Some(display_driver),
+                input_driver: Some(input_driver),
+                prefer_simple_pointer: false,
+                shift_key: 0,
+            })
+        }
     }
 
     /// Common security/platform gate for every executable entry point.
+    #[cfg(feature = "uefi")]
     pub fn launch(application: fn(NanoSystem) -> Status) -> Status {
+        Self::launch_with_target(application, 1280, 720)
+    }
+
+    /// Common entry point variant for compact or appliance-style systems.
+    /// Nano remains generic; each image chooses its preferred working size at
+    /// the entry boundary and receives the actual selected mode in `display`.
+    #[cfg(feature = "uefi")]
+    pub fn launch_with_target(
+        application: fn(NanoSystem) -> Status,
+        target_width: usize,
+        target_height: usize,
+    ) -> Status {
         serial_log("nano: launch\r\n");
-        match Self::start(NanoColor::BLACK) {
+        match Self::start_with_target(NanoColor::BLACK, target_width, target_height) {
             Ok(nano) => {
                 serial_log("nano: application entered\r\n");
                 application(nano)
@@ -350,11 +561,42 @@ impl NanoSystem {
         }
     }
 
+    /// Common security/platform gate for every executable entry point.
+    #[cfg(feature = "esp32s3")]
+    pub fn launch(application: fn(NanoSystem) -> Status) -> Status {
+        Self::launch_with_target(application, 1280, 720)
+    }
+
+    /// Common entry point variant for compact or appliance-style systems.
+    #[cfg(feature = "esp32s3")]
+    pub fn launch_with_target(
+        application: fn(NanoSystem) -> Status,
+        target_width: usize,
+        target_height: usize,
+    ) -> Status {
+        match Self::start_with_target(NanoColor::BLACK, target_width, target_height) {
+            Ok(nano) => {
+                application(nano)
+            }
+            Err(_) => {
+                Self::paint_failure_screen();
+                Status::DEVICE_ERROR
+            }
+        }
+    }
+
     /// Emit a diagnostics line to the UEFI Serial I/O protocol. QEMU maps
     /// this device to `-serial stdio`, so it remains available even when GOP
     /// rendering is unavailable or has already failed.
     pub fn serial_log(message: &str) {
-        serial_log(message);
+        #[cfg(feature = "uefi")]
+        {
+            serial_log(message);
+        }
+        #[cfg(feature = "esp32s3")]
+        {
+            let _ = message;
+        }
     }
 
     /// Shared panic endpoint for Nano System executables. Keep this free of
@@ -365,29 +607,56 @@ impl NanoSystem {
         if let Some(location) = info.location() {
             let _ = write!(writer, "at {}:{}\r\n", location.file(), location.line());
         }
-        serial_log(writer.as_str());
+        Self::serial_log(writer.as_str());
         Self::paint_failure_screen();
         loop {
-            boot::stall(Duration::from_millis(100));
+            #[cfg(feature = "uefi")]
+            {
+                boot::stall(Duration::from_millis(100));
+            }
+            #[cfg(feature = "esp32s3")]
+            {
+                esp_hal::delay::Delay::delay_ms(100);
+            }
         }
     }
 
     /// Best-effort full-screen failure indicator. If GOP itself is missing,
     /// no implementation can draw a framebuffer error screen.
     pub fn paint_failure_screen() {
-        if let Ok(mut graphics) = open_display() {
-            fill_display(&mut graphics, NanoColor::FAILURE_RED);
+        #[cfg(feature = "uefi")]
+        {
+            if let Ok(mut graphics) = open_display() {
+                fill_display(&mut graphics, NanoColor::FAILURE_RED);
+            }
+        }
+        #[cfg(feature = "esp32s3")]
+        {
+            let _ = NanoColor::FAILURE_RED;
         }
     }
 
+    #[cfg(feature = "uefi")]
     pub fn cold_reset() -> ! {
         uefi::runtime::reset(ResetType::COLD, Status::SUCCESS, None)
     }
 
+    #[cfg(feature = "esp32s3")]
+    pub fn cold_reset() -> ! {
+        loop {}
+    }
+
+    #[cfg(feature = "uefi")]
     pub fn take_timer_event(&mut self) -> Option<uefi::Event> {
         self.timer_event.take()
     }
 
+    #[cfg(feature = "esp32s3")]
+    pub fn take_timer_event(&mut self) -> Option<()> {
+        self.timer_handle.take().map(|_| ())
+    }
+
+    #[cfg(feature = "uefi")]
     pub fn poll_keyboard(&mut self) -> Option<NanoKeyEvent> {
         let key = uefi::system::with_stdin(|input| input.read_key().ok().flatten());
         if let Some(key) = key {
@@ -415,6 +684,13 @@ impl NanoSystem {
         }
     }
 
+    #[cfg(feature = "esp32s3")]
+    pub fn poll_keyboard(&mut self) -> Option<NanoKeyEvent> {
+        let _ = self;
+        None
+    }
+
+    #[cfg(feature = "uefi")]
     pub fn poll_pointer(&mut self) -> Option<NanoBasicPointerEvent> {
         if let Some(event) = self.poll_usb_pointer() {
             return Some(event);
@@ -439,6 +715,13 @@ impl NanoSystem {
         None
     }
 
+    #[cfg(feature = "esp32s3")]
+    pub fn poll_pointer(&mut self) -> Option<NanoBasicPointerEvent> {
+        let _ = self;
+        None
+    }
+
+    #[cfg(feature = "uefi")]
     fn poll_usb_pointer(&mut self) -> Option<NanoBasicPointerEvent> {
         for pointer in &mut self.usb_pointers {
             if let Some((dx, dy, scroll, buttons)) = pointer.state.take() {
@@ -466,11 +749,9 @@ impl NanoSystem {
         None
     }
 
+    #[cfg(feature = "uefi")]
     fn poll_absolute_pointer(&mut self) -> Option<NanoBasicPointerEvent> {
         for device in &mut self.absolute_pointers {
-            // Read once for the current sample and at most once more for an
-            // immediately newer one. Never let an always-ready implementation
-            // monopolize the CPU.
             let mut latest = None;
             for _ in 0..MAX_ABSOLUTE_SAMPLES_PER_POLL {
                 match device.pointer.get_state() {
@@ -511,11 +792,9 @@ impl NanoSystem {
         None
     }
 
+    #[cfg(feature = "uefi")]
     fn poll_simple_pointer(&mut self) -> Option<NanoBasicPointerEvent> {
         for device in &mut self.simple_pointers {
-            // Read the current report and at most one immediately queued
-            // successor. Further draining costs more firmware calls and is
-            // handled by the next outer poll without delaying this update.
             let mut raw_dx = 0i32;
             let mut raw_dy = 0i32;
             let mut scroll = 0i32;
@@ -558,6 +837,7 @@ impl NanoSystem {
         None
     }
 
+    #[cfg(feature = "uefi")]
     pub fn begin_pointer_test() -> Result<NanoPointerTestDisplay, Status> {
         let mut graphics = open_display()?;
         let mode = graphics.current_mode_info();
@@ -580,11 +860,32 @@ impl NanoSystem {
         })
     }
 
+    #[cfg(feature = "esp32s3")]
+    pub fn begin_pointer_test() -> Result<NanoPointerTestDisplay, StartError> {
+        let framebuffer = ptr::null_mut();
+        Ok(NanoPointerTestDisplay {
+            width: 1280,
+            height: 720,
+            stride: 1280 * 4,
+            framebuffer,
+            background_pixel: NanoColor::rgb(0x00, 0x00, 0x44).0,
+            white_pixel: NanoColor::rgb(0xff, 0xff, 0xff).0,
+            yellow_pixel: NanoColor::rgb(0xff, 0xff, 0x00).0,
+        })
+    }
+
     pub fn pointer_abs_max(&self) -> (u64, u64) {
-        self.absolute_pointers
-            .first()
-            .map(|pointer| (pointer.range_x, pointer.range_y))
-            .unwrap_or((1, 1))
+        #[cfg(feature = "uefi")]
+        {
+            self.absolute_pointers
+                .first()
+                .map(|pointer| (pointer.range_x, pointer.range_y))
+                .unwrap_or((1, 1))
+        }
+        #[cfg(feature = "esp32s3")]
+        {
+            (1, 1)
+        }
     }
 
     pub fn key_is_held(&self, _code: u8) -> bool {
@@ -608,19 +909,48 @@ impl NanoSystem {
 #[macro_export]
 macro_rules! nano_entry {
     ($application:path) => {
+        #[cfg(feature = "uefi")]
         #[uefi::entry]
         fn main() -> uefi::Status {
             $crate::NanoSystem::launch($application)
         }
+
+        #[cfg(feature = "esp32s3")]
+        #[no_mangle]
+        pub unsafe extern "C" fn main() -> ! {
+            let _ = $crate::NanoSystem::launch($application);
+            loop {}
+        }
     };
 }
 
+/// Declare a UEFI executable with an explicit Nano working-resolution target.
+#[macro_export]
+macro_rules! nano_entry_with_target {
+    ($application:path, $width:expr, $height:expr) => {
+        #[cfg(feature = "uefi")]
+        #[uefi::entry]
+        fn main() -> uefi::Status {
+            $crate::NanoSystem::launch_with_target($application, $width, $height)
+        }
+
+        #[cfg(feature = "esp32s3")]
+        #[no_mangle]
+        pub unsafe extern "C" fn main() -> ! {
+            let _ = $crate::NanoSystem::launch_with_target($application, $width, $height);
+            loop {}
+        }
+    };
+}
+
+#[cfg(feature = "uefi")]
 fn open_display() -> Result<ScopedProtocol<GraphicsOutput>, Status> {
     let handle =
         boot::get_handle_for_protocol::<GraphicsOutput>().map_err(|_| Status::UNSUPPORTED)?;
     boot::open_protocol_exclusive::<GraphicsOutput>(handle).map_err(|_| Status::ACCESS_DENIED)
 }
 
+#[cfg(feature = "uefi")]
 fn open_usb_pointers() -> Vec<BasicUsbPointer> {
     let mut pointers = Vec::new();
     let Ok(handles) = boot::find_handles::<UsbIo>() else {
@@ -704,6 +1034,7 @@ fn open_usb_pointers() -> Vec<BasicUsbPointer> {
     pointers
 }
 
+#[cfg(feature = "uefi")]
 fn open_simple_pointers() -> Vec<BasicSimpleDevice> {
     let mut pointers = Vec::new();
     if let Ok(handles) = boot::find_handles::<Pointer>() {
@@ -719,6 +1050,7 @@ fn open_simple_pointers() -> Vec<BasicSimpleDevice> {
     pointers
 }
 
+#[cfg(feature = "uefi")]
 fn open_absolute_pointers() -> Vec<BasicAbsoluteDevice> {
     let mut pointers = Vec::new();
     if let Ok(handles) = boot::find_handles::<AbsolutePointer>() {
@@ -745,6 +1077,7 @@ fn open_absolute_pointers() -> Vec<BasicAbsoluteDevice> {
     pointers
 }
 
+#[cfg(feature = "uefi")]
 unsafe extern "efiapi" fn usb_pointer_callback(
     data: *mut c_void,
     data_length: usize,
@@ -772,15 +1105,14 @@ unsafe extern "efiapi" fn usb_pointer_callback(
     Status::SUCCESS
 }
 
-fn choose_working_mode(graphics: &mut GraphicsOutput) {
-    const TARGET_W: usize = 1280;
-    const TARGET_H: usize = 720;
+#[cfg(feature = "uefi")]
+fn choose_working_mode(graphics: &mut GraphicsOutput, target_w: usize, target_h: usize) {
     let mut best_score = usize::MAX;
     let mut best_mode = None;
     for mode in graphics.modes() {
         let (width, height) = mode.info().resolution();
-        let score = width.abs_diff(TARGET_W).saturating_mul(TARGET_H)
-            + height.abs_diff(TARGET_H).saturating_mul(TARGET_W);
+        let score = width.abs_diff(target_w).saturating_mul(target_h)
+            + height.abs_diff(target_h).saturating_mul(target_w);
         if score < best_score {
             best_score = score;
             best_mode = Some(mode);
@@ -791,6 +1123,7 @@ fn choose_working_mode(graphics: &mut GraphicsOutput) {
     }
 }
 
+#[cfg(feature = "uefi")]
 fn display_info(graphics: &GraphicsOutput) -> NanoDisplayInfo {
     let mode = graphics.current_mode_info();
     let (width, height) = mode.resolution();
@@ -801,6 +1134,7 @@ fn display_info(graphics: &GraphicsOutput) -> NanoDisplayInfo {
     }
 }
 
+#[cfg(feature = "uefi")]
 fn fill_display(graphics: &mut GraphicsOutput, color: NanoColor) {
     let mode = graphics.current_mode_info();
     let (width, height) = mode.resolution();
@@ -823,6 +1157,7 @@ fn fill_display(graphics: &mut GraphicsOutput, color: NanoColor) {
     }
 }
 
+#[cfg(feature = "uefi")]
 fn pointer_test_color(yellow: bool) -> NanoColor {
     if yellow {
         NanoColor::rgb(0xff, 0xff, 0x00)
@@ -831,6 +1166,7 @@ fn pointer_test_color(yellow: bool) -> NanoColor {
     }
 }
 
+#[cfg(feature = "uefi")]
 fn encode_pixel(format: PixelFormat, color: NanoColor) -> u32 {
     match format {
         PixelFormat::Rgb => {
@@ -843,6 +1179,7 @@ fn encode_pixel(format: PixelFormat, color: NanoColor) -> u32 {
     }
 }
 
+#[cfg(feature = "uefi")]
 fn fill_rect_raw(
     framebuffer: *mut u32,
     screen_width: usize,
@@ -866,6 +1203,7 @@ fn fill_rect_raw(
     }
 }
 
+#[cfg(feature = "uefi")]
 fn fill_rect(
     graphics: &mut GraphicsOutput,
     x: usize,
@@ -895,11 +1233,17 @@ fn fill_rect(
     }
 }
 
+#[cfg(feature = "uefi")]
+use uefi::proto::console::text::Output;
+
+#[cfg(feature = "uefi")]
 fn log_phase(message: &uefi::CStr16) {
-    uefi::system::with_stdout(|stdout| {
-        let _ = stdout.output_string(message);
-        let _ = stdout.output_string(uefi::cstr16!("\r\n"));
-    });
+    if uefi::boot::get_handle_for_protocol::<Output>().is_ok() {
+        uefi::system::with_stdout(|stdout| {
+            let _ = stdout.output_string(message);
+            let _ = stdout.output_string(uefi::cstr16!("\r\n"));
+        });
+    }
 }
 
 struct PanicWriter {
@@ -930,6 +1274,7 @@ impl Write for PanicWriter {
     }
 }
 
+#[cfg(feature = "uefi")]
 fn serial_log(message: &str) {
     let Ok(handle) = boot::get_handle_for_protocol::<Serial>() else {
         return;
@@ -940,6 +1285,7 @@ fn serial_log(message: &str) {
     let _ = serial.write(message.as_bytes());
 }
 
+#[cfg(feature = "uefi")]
 fn create_periodic_timer(period: Duration) -> Option<uefi::Event> {
     let event = unsafe { boot::create_event(EventType::TIMER, Tpl::APPLICATION, None, None).ok()? };
     if boot::set_timer(&event, TimerTrigger::Periodic(period)).is_err() {
@@ -947,6 +1293,12 @@ fn create_periodic_timer(period: Duration) -> Option<uefi::Event> {
         return None;
     }
     Some(event)
+}
+
+#[cfg(feature = "esp32s3")]
+fn create_periodic_timer_esp32s3(period: Duration) -> Option<esp_hal::timer::TimerHandle<'static, esp_hal::timer::Wdt>> {
+    let _ = period;
+    None
 }
 
 #[no_mangle]

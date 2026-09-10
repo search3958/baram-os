@@ -31,17 +31,25 @@ path = "src/bin/iokit.rs"
 name = "bsd"
 path = "src/bin/bsd.rs"
 
+[features]
+default = ["uefi"]
+uefi = ["dep:uefi", "dep:uefi-raw", "baram-core/uefi", "baram-bsd/uefi", "baram-font/uefi", "baram-warp4/uefi", "baram-iokit/uefi", "baram-kern/uefi", "nano-system/uefi"]
+esp32s3 = ["dep:esp-hal", "dep:embedded-hal", "baram-core/esp32s3", "baram-bsd/esp32s3", "baram-font/esp32s3", "baram-warp4/esp32s3", "baram-iokit/esp32s3", "baram-kern/esp32s3", "nano-system/esp32s3"]
+
 [dependencies]
-baram-core = { path = "../baram-core" }
-baram-font = { path = "../baram-font" }
+baram-core = { path = "../baram-core", default-features = false }
+baram-font = { path = "../baram-font", default-features = false }
 baram-graphics = { path = "../baram-graphics" }
-baram-iokit = { path = "../baram-iokit" }
-baram-bsd = { path = "../baram-bsd" }
+baram-iokit = { path = "../baram-iokit", default-features = false }
+baram-bsd = { path = "../baram-bsd", default-features = false }
 baram-windowserver = { path = "../baram-windowserver" }
-baram-kern = { path = "../baram-kern" }
-nano-system = { path = "../nano-system" }
+baram-warp4 = { path = "../baram-warp4", default-features = false }
+baram-kern = { path = "../baram-kern", default-features = false }
+nano-system = { path = "../nano-system", default-features = false }
 png-decoder = { path = "../png-decoder" }
-uefi = { workspace = true }
-uefi-raw = { workspace = true }
+uefi = { workspace = true, optional = true }
+uefi-raw = { workspace = true, optional = true }
+esp-hal = { workspace = true, optional = true }
+embedded-hal = { workspace = true, optional = true }
 libm = { workspace = true }
 wana_kana = { path = "../wana-kana" }

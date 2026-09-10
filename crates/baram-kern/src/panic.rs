@@ -1,16 +1,26 @@
+#[cfg(feature = "uefi")]
 use core::fmt::Write;
+#[cfg(feature = "uefi")]
 use core::ptr;
-
+#[cfg(feature = "uefi")]
 use baram_core::Color;
+#[cfg(feature = "uefi")]
 use uefi::boot;
+#[cfg(feature = "uefi")]
 use uefi::proto::console::serial::Serial;
 
+#[cfg(feature = "uefi")]
 static mut FB_BASE: usize = 0;
+#[cfg(feature = "uefi")]
 static mut FB_W: usize = 0;
+#[cfg(feature = "uefi")]
 static mut FB_H: usize = 0;
+#[cfg(feature = "uefi")]
 static mut FB_STRIDE: usize = 0;
+#[cfg(feature = "uefi")]
 static mut FB_PF_RGB: bool = true;
 
+#[cfg(feature = "uefi")]
 pub unsafe fn init_from_screen(screen: &baram_core::Screen) {
     let info = screen.info();
     FB_BASE = info.base;
@@ -19,7 +29,7 @@ pub unsafe fn init_from_screen(screen: &baram_core::Screen) {
     FB_STRIDE = info.stride;
     FB_PF_RGB = matches!(
         info.pixel_format,
-        uefi::proto::console::gop::PixelFormat::Rgb
+        baram_core::PixelFormat::Rgb
     );
 }
 

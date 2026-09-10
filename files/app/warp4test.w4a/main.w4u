@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-
 <LinearLayout
     xmlns:baram="http://schemas.baram.com/apk/res/baram"
     baram:layout_width="fill_parent"

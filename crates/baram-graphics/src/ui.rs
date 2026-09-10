@@ -7,6 +7,7 @@ use baram_core::{Color, Screen};
 use baram_font::font::{self, GLYPH_H, GLYPH_W};
 
 pub fn put_char(screen: &mut Screen, x: usize, y: usize, c: u8, fg: Color, bg: Color) {
+    #[cfg(feature = "ttf")]
     if baram_font::ttf_font::is_available() && c >= 0x20 {
         let glyph = baram_font::ttf_font::glyph(c as char);
         if glyph.w > 0 && glyph.h > 0 {
@@ -44,6 +45,7 @@ pub fn put_char(screen: &mut Screen, x: usize, y: usize, c: u8, fg: Color, bg: C
 }
 
 pub fn put_str(screen: &mut Screen, mut x: usize, y: usize, s: &str, fg: Color, bg: Color) {
+    #[cfg(feature = "ttf")]
     if baram_font::ttf_font::is_available() {
         for ch in s.chars() {
             let glyph = baram_font::ttf_font::glyph(ch);
