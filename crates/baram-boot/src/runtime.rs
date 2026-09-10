@@ -1,3 +1,4 @@
+#[cfg(feature = "uefi")]
 fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     NanoSystem::serial_log("baram: kernel entry\r\n");
     let mut timer_event = nano.take_timer_event();

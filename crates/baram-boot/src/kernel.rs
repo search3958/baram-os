@@ -5,7 +5,9 @@ extern crate alloc;
 
 use alloc::vec;
 use alloc::vec::Vec;
+#[cfg(feature = "uefi")]
 use uefi::prelude::*;
+#[cfg(feature = "uefi")]
 use uefi::runtime;
 
 use baram_bsd::config;
@@ -53,6 +55,7 @@ fn kernel_pointer_event(
     }
 }
 
+#[cfg(feature = "uefi")]
 fn kernel_main(mut nano: NanoSystem) -> Status {
     log("BaramOS: starting kernel...");
     let _ = uefi::helpers::init();
@@ -272,8 +275,16 @@ fn kernel_main(mut nano: NanoSystem) -> Status {
     }
 }
 
+#[cfg(feature = "uefi")]
 nano_system::nano_entry!(kernel_main);
+#[cfg(feature = "esp32s3")]
+#[no_mangle]
+pub unsafe extern "C" fn main() -> ! {
+    kernel_main(nano_system::NanoSystem::start().unwrap());
+    loop {}
+}
 
+#[cfg(feature = "uefi")]
 fn log(s: &str) {
     uefi::system::with_stdout(|stdout| {
         let _ = stdout.output_string(uefi::cstr16!("BaramOS: "));
@@ -292,6 +303,12 @@ fn log(s: &str) {
     });
 }
 
+#[cfg(feature = "esp32s3")]
+fn log(s: &str) {
+    let _ = s;
+}
+
+#[cfg(feature = "uefi")]
 fn time_diff_ns(a: &runtime::Time, b: &runtime::Time) -> u64 {
     let a_ns = a.nanosecond() as u64
         + a.second() as u64 * 1_000_000_000

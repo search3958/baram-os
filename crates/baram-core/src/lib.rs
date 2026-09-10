@@ -13,4 +13,4 @@ pub mod subsystem;
 pub use color::Color;
 pub use key_event::KeyEvent;
 pub use layer::LayerSystem;
-pub use screen::{FramebufferInfo, Screen};
+pub use screen::{FramebufferInfo, PixelFormat, Screen};

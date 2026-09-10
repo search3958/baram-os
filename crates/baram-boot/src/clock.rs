@@ -60,6 +60,7 @@ fn monotonic_counter_frequency() -> Option<u64> {
         // Some virtual firmware hides leaves 0x15/0x16. Calibrate once at
         // startup instead of falling back to coalesced timer-event counts.
         let start = core::arch::x86_64::_rdtsc();
+        #[cfg(feature = "uefi")]
         uefi::boot::stall(core::time::Duration::from_millis(10));
         let elapsed = core::arch::x86_64::_rdtsc().wrapping_sub(start);
         if elapsed != 0 {
@@ -89,5 +90,32 @@ fn monotonic_counter_frequency() -> Option<u64> {
         None
     } else {
         Some(value)
+    }
+}
+
+#[cfg(target_arch = "xtensa")]
+#[inline]
+fn monotonic_counter() -> u64 {
+    use esp_hal::timer::Timer;
+    static mut COUNTER: u64 = 0;
+    unsafe {
+        let timer = esp_hal::timer::TimerGroup::new(esp_hal::peripherals::TIMG0);
+        let ticks = timer.timer0.counter();
+        COUNTER = ticks as u64;
+        COUNTER
+    }
+}
+
+#[cfg(target_arch = "xtensa")]
+fn monotonic_counter_frequency() -> Option<u64> {
+    use esp_hal::timer::Timer;
+    unsafe {
+        let timer = esp_hal::timer::TimerGroup::new(esp_hal::peripherals::TIMG0);
+        let freq = timer.timer0.duration().0;
+        if freq != 0 {
+            Some(freq)
+        } else {
+            None
+        }
     }
 }

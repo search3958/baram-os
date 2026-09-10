@@ -1,4 +1,4 @@
-//! Minimal x86_64 kiosk entry point.
+//! Minimal kiosk entry point.
 //!
 //! This intentionally uses only Nano System, the UEFI-backed Baram filesystem,
 //! and Warp4.  There is no desktop, window manager, subsystem scheduler, or
@@ -11,14 +11,16 @@ extern crate alloc;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use uefi::prelude::*;
-use uefi::runtime;
-
 use baram_bsd::{app, config};
 use baram_core::{Color, LayerSystem, Screen};
 use baram_warp4::Warp4Engine;
 use crate::clock::UiMonotonicClock;
 use nano_system::{NanoBasicPointerEvent, NanoKeyEvent, NanoSystem};
+
+#[cfg(feature = "uefi")]
+use uefi::prelude::*;
+#[cfg(feature = "uefi")]
+use uefi::runtime;
 
 const LIST_XML: &str = r#"<?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:baram="http://schemas.baram.com/apk/res/baram" baram:layout_width="fill_parent" baram:layout_height="fill_parent" baram:fillViewport="false">
@@ -89,6 +91,7 @@ fn entries() -> Vec<Entry> {
     result
 }
 
+#[cfg(feature = "uefi")]
 fn now_ns() -> u64 {
     runtime::get_time()
         .ok()
@@ -97,6 +100,19 @@ fn now_ns() -> u64 {
                 + t.nanosecond() as u64
         })
         .unwrap_or(0)
+}
+
+#[cfg(feature = "esp32s3")]
+fn now_ns() -> u64 {
+    use esp_hal::timer::Timer;
+    static mut TIMER: Option<Timer> = None;
+    unsafe {
+        if TIMER.is_none() {
+            let timer_group = esp_hal::timer::TimerGroup::new(esp_hal::peripherals::TIMG0);
+            TIMER = Some(timer_group.timer0);
+        }
+        TIMER.as_ref().unwrap().counter() as u64
+    }
 }
 
 // UEFI Simple Text Input scan codes: Up=1, Down=2, Right=3, Left=4.
@@ -199,6 +215,7 @@ fn restore_cursor_background(screen: &mut Screen, layer: &LayerSystem, x: i32, y
     }
 }
 
+#[cfg(feature = "uefi")]
 pub fn run(mut nano: NanoSystem) -> Status {
     config::init_config();
     // Xiao is the only image that uses compact Warp4 metrics.  The normal
@@ -364,6 +381,172 @@ pub fn run(mut nano: NanoSystem) -> Status {
             // Xiao is a single-task kiosk: an app's OS-setting command is
             // executed immediately, without a permission window or hash
             // lookup.  There is no second app/window to authorize against.
+            if let Some(command) = engine.take_command() {
+                if command.starts_with("os://") {
+                    let _ = baram_bsd::uri::execute(&command, &mut display_state);
+                    engine.refresh_config();
+                    display_changed = true;
+                }
+            }
+            if display_changed {
+                engine.draw_to_layer(&mut layer, 0, 0);
+                layer.flush(&mut screen);
+            }
+        }
+        if !cursor_drawn {
+            draw_cursor(&mut screen, &layer, x, y);
+            cursor_drawn = true;
+        } else if cursor_x != x || cursor_y != y {
+            restore_cursor_background(&mut screen, &layer, cursor_x, cursor_y);
+            draw_cursor(&mut screen, &layer, x, y);
+        }
+        cursor_x = x;
+        cursor_y = y;
+    }
+}
+
+#[cfg(feature = "esp32s3")]
+pub fn run(mut nano: NanoSystem) -> ! {
+    use esp_hal::timer::Timer;
+
+    config::init_config();
+    baram_warp4::set_ui_mode(baram_warp4::UiMode::Xiao);
+    baram_warp4::set_ui_scale_percent(25);
+    baram_font::bdf_font::init_file("\\EFI\\BOOT\\MISAKI_GOTHIC_2ND.BDF");
+    let mut screen = match Screen::take_with_target(nano.display.width, nano.display.height) {
+        Ok(s) => s,
+        Err(_) => loop {},
+    };
+    NanoSystem::serial_log(&format!(
+        "xiao: screen {}x{}\r\n",
+        screen.width(),
+        screen.height()
+    ));
+    unsafe {
+        baram_font::log::init_screen(&screen);
+    }
+    let ui_clock = UiMonotonicClock::new();
+    let mut layer = LayerSystem::new_screen_backed(&mut screen);
+    let mut display_state = baram_bsd::uri::DisplayState::new();
+    baram_bsd::uri::load_settings_from_config(&mut display_state);
+    let apps = entries();
+    let app_titles: Vec<&str> = apps.iter().map(|entry| entry.title.as_str()).collect();
+    baram_font::bdf_font::preload_texts(&app_titles);
+    let sources = [("config.ini", LIST_CONFIG), ("main.w4u", LIST_XML)];
+    let mut list = Some(Warp4Engine::new_embedded("__os_kiosk__", &sources));
+    list.as_mut().unwrap().set_chrome_visible(false);
+    for i in 0..32 {
+        let id = format!("app{}", i);
+        if let Some(entry) = apps.get(i) {
+            list.as_mut().unwrap().set_text(&id, &entry.title);
+            list.as_mut().unwrap().set_visible(&id, true);
+        } else {
+            list.as_mut().unwrap().set_visible(&id, false);
+        }
+    }
+    if let Some(list) = list.as_mut() {
+        list.draw_to_layer(&mut layer, 0, 0);
+        layer.flush(&mut screen);
+    }
+    let mut selected: Option<Warp4Engine> = None;
+    let mut x = (screen.width() / 2) as i32;
+    let mut y = (screen.height() / 2) as i32;
+    let mut cursor_x = x;
+    let mut cursor_y = y;
+    let mut cursor_drawn = false;
+    let mut content_dirty = true;
+    let mut timer_event = nano.take_timer_event();
+    loop {
+        if let Some(ref mut timer) = timer_event {
+            let _ = esp_hal::timer::Timer::wait_for_event(timer);
+        }
+        if selected.is_none() {
+            let mut display_changed = content_dirty;
+            content_dirty = false;
+            let mut clicked_id = None;
+            if let Some(list) = list.as_mut() {
+                while let Some(event) = nano.poll_keyboard() {
+                    if handle_kiosk_key(list, event) {
+                        display_changed = true;
+                    }
+                }
+                while let Some(event) = nano.poll_pointer() {
+                    let was_down = pointer_xy(
+                        event,
+                        &nano,
+                        &mut x,
+                        &mut y,
+                        screen.width(),
+                        screen.height(),
+                    );
+                    let document_y = y.saturating_add(list.scroll_position());
+                    if was_down {
+                        list.click(x, document_y);
+                        display_changed = true;
+                    } else if list.has_pressed() {
+                        list.release();
+                        display_changed = true;
+                    }
+                    display_changed |= list.set_hover_changed(x, document_y);
+                    display_changed |= list.pointer_move(x, y);
+                }
+                let animation_now_ns = ui_clock
+                    .as_ref()
+                    .map(UiMonotonicClock::elapsed_ns)
+                    .unwrap_or_else(now_ns);
+                display_changed |= list.tick(animation_now_ns);
+                clicked_id = list.take_clicked_id();
+                if clicked_id.is_none() && display_changed {
+                    list.draw_to_layer(&mut layer, 0, 0);
+                    layer.flush(&mut screen);
+                }
+            }
+            if let Some(id) = clicked_id {
+                if let Some(index) = id.strip_prefix("app").and_then(|v| v.parse::<usize>().ok()) {
+                    if let Some(entry) = apps.get(index) {
+                        let mut engine = Warp4Engine::new(&entry.name);
+                        engine.set_chrome_visible(false);
+                        engine.draw_to_layer(&mut layer, 0, 0);
+                        engine.start_transition();
+                        selected = Some(engine);
+                        list = None;
+                        content_dirty = true;
+                    }
+                }
+            }
+        } else if let Some(engine) = selected.as_mut() {
+            let mut display_changed = content_dirty;
+            content_dirty = false;
+            while let Some(event) = nano.poll_keyboard() {
+                if handle_kiosk_key(engine, event) {
+                    display_changed = true;
+                }
+            }
+            while let Some(event) = nano.poll_pointer() {
+                let down = pointer_xy(
+                    event,
+                    &nano,
+                    &mut x,
+                    &mut y,
+                    screen.width(),
+                    screen.height(),
+                );
+                let document_y = y.saturating_add(engine.scroll_position());
+                if down {
+                    engine.click(x, document_y);
+                    display_changed = true;
+                } else if engine.has_pressed() {
+                    engine.release();
+                    display_changed = true;
+                }
+                display_changed |= engine.set_hover_changed(x, document_y);
+                display_changed |= engine.pointer_move(x, y);
+            }
+            let animation_now_ns = ui_clock
+                .as_ref()
+                .map(UiMonotonicClock::elapsed_ns)
+                .unwrap_or_else(now_ns);
+            display_changed |= engine.tick(animation_now_ns);
             if let Some(command) = engine.take_command() {
                 if command.starts_with("os://") {
                     let _ = baram_bsd::uri::execute(&command, &mut display_state);

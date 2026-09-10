@@ -1,5 +1,8 @@
+#[cfg(feature = "uefi")]
 use uefi::boot;
+#[cfg(feature = "uefi")]
 use uefi::proto::media::file::{Directory, File, FileAttribute, FileInfo, FileMode, RegularFile};
+#[cfg(feature = "uefi")]
 use uefi::CStr16;
 
 use alloc::format;
@@ -7,11 +10,19 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use baram_font::log_line_str;
 
+#[cfg(not(feature = "uefi"))]
+#[cfg(not(feature = "esp32s3"))]
+compile_error!("Either 'uefi' or 'esp32s3' feature must be enabled");
+
+#[cfg(feature = "esp32s3")]
+use esp_hal::fs;
+
 pub fn read_file(path: &str) -> alloc::vec::Vec<u8> {
     read_file_candidates(&[path])
 }
 
 /// Read a VFS path from the normal FAT directory tree.
+#[cfg(feature = "uefi")]
 pub fn read_file_candidates(paths: &[&str]) -> alloc::vec::Vec<u8> {
     // The image layout is a regular filesystem. Try the image volume first so
     // a lookup opens the path directly instead of scanning a container.
@@ -25,6 +36,17 @@ pub fn read_file_candidates(paths: &[&str]) -> alloc::vec::Vec<u8> {
     read_direct_file_candidates(paths)
 }
 
+#[cfg(feature = "esp32s3")]
+pub fn read_file_candidates(paths: &[&str]) -> alloc::vec::Vec<u8> {
+    for path in paths {
+        if let Some(data) = try_read_from_spiffs(path) {
+            return data;
+        }
+    }
+    alloc::vec::Vec::new()
+}
+
+#[cfg(feature = "uefi")]
 fn read_direct_file_candidates(paths: &[&str]) -> alloc::vec::Vec<u8> {
     // Strategy 1: try image handle's filesystem (works on QEMU)
     for path in paths {
@@ -40,6 +62,25 @@ fn read_direct_file_candidates(paths: &[&str]) -> alloc::vec::Vec<u8> {
     try_read_from_any_fs(paths)
 }
 
+#[cfg(feature = "esp32s3")]
+fn try_read_from_spiffs(path: &str) -> Option<alloc::vec::Vec<u8>> {
+    let path_str = path.trim_start_matches('/');
+    fs::read(path_str).ok()
+}
+
+#[cfg(feature = "uefi")]
+fn is_safe_fs_path(path: &str) -> bool {
+    !path.is_empty()
+        && !path.starts_with('/')
+        && !path
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+        && path
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b'/'))
+}
+
+#[cfg(feature = "esp32s3")]
 fn is_safe_fs_path(path: &str) -> bool {
     !path.is_empty()
         && !path.starts_with('/')
@@ -54,6 +95,7 @@ fn is_safe_fs_path(path: &str) -> bool {
 /// Map the public VFS namespace to the regular files stored on the FAT
 /// volume. `apps/foo` historically meant the archive member `app/foo`; in the
 /// directory layout it is `files/app/foo`.
+#[cfg(feature = "uefi")]
 fn direct_fs_path(path: &str) -> Option<String> {
     let path = path.trim_start_matches('/').trim_end_matches('/');
     if path.is_empty() {
@@ -77,12 +119,38 @@ fn direct_fs_path(path: &str) -> Option<String> {
     Some(path.into())
 }
 
+#[cfg(feature = "esp32s3")]
+fn direct_fs_path(path: &str) -> Option<String> {
+    let path = path.trim_start_matches('/').trim_end_matches('/');
+    if path.is_empty() {
+        return Some(String::new());
+    }
+    if !is_safe_fs_path(path) {
+        return None;
+    }
+    if let Some(rest) = path.strip_prefix("apps/") {
+        return Some(format!("files/app/{rest}"));
+    }
+    if path == "apps" {
+        return Some("files/app".into());
+    }
+    if path.starts_with("files/") || path == "files" {
+        return Some(path.into());
+    }
+    if path.starts_with("app/") || path.starts_with("data/") {
+        return Some(format!("files/{path}"));
+    }
+    Some(path.into())
+}
+
+#[cfg(feature = "uefi")]
 fn try_read_from_image_fs(path: &str) -> Option<alloc::vec::Vec<u8>> {
     let ih = uefi::boot::image_handle();
     let mut fs = uefi::boot::get_image_file_system(ih).ok()?;
     read_from_fs(&mut fs, path)
 }
 
+#[cfg(feature = "uefi")]
 fn try_read_from_any_fs(paths: &[&str]) -> alloc::vec::Vec<u8> {
     let handles = match boot::find_handles::<uefi::proto::media::fs::SimpleFileSystem>() {
         Ok(h) => h,
@@ -132,6 +200,7 @@ fn try_read_from_any_fs(paths: &[&str]) -> alloc::vec::Vec<u8> {
     alloc::vec::Vec::new()
 }
 
+#[cfg(feature = "uefi")]
 fn list_dir(root: &mut uefi::proto::media::file::Directory, prefix: &str, fs_idx: usize) {
     let mut buf = [0u8; 256];
     loop {
@@ -158,6 +227,7 @@ fn list_dir(root: &mut uefi::proto::media::file::Directory, prefix: &str, fs_idx
     }
 }
 
+#[cfg(feature = "uefi")]
 fn read_from_fs(
     fs: &mut boot::ScopedProtocol<uefi::proto::media::fs::SimpleFileSystem>,
     path: &str,
@@ -178,6 +248,7 @@ fn read_from_fs(
     Some(contents)
 }
 
+#[cfg(feature = "uefi")]
 fn open_regular_file(
     fs: &mut boot::ScopedProtocol<uefi::proto::media::fs::SimpleFileSystem>,
     path: &str,
@@ -199,6 +270,7 @@ fn open_regular_file(
         .into_regular_file()
 }
 
+#[cfg(feature = "uefi")]
 fn open_directory(
     fs: &mut boot::ScopedProtocol<uefi::proto::media::fs::SimpleFileSystem>,
     path: &str,
@@ -245,6 +317,7 @@ pub fn parse_files_uri(uri: &str) -> Option<String> {
 }
 
 /// List the immediate children of a directory in the FAT tree.
+#[cfg(feature = "uefi")]
 pub fn list_files(path: &str) -> Vec<FileEntry> {
     let vfs_path = parse_files_uri(path).unwrap_or_else(|| path.into());
     let Some(direct_path) = direct_fs_path(&vfs_path) else {
@@ -260,6 +333,31 @@ pub fn list_files(path: &str) -> Vec<FileEntry> {
     result
 }
 
+#[cfg(feature = "esp32s3")]
+pub fn list_files(path: &str) -> Vec<FileEntry> {
+    let vfs_path = parse_files_uri(path).unwrap_or_else(|| path.into());
+    let Some(direct_path) = direct_fs_path(&vfs_path) else {
+        return Vec::new();
+    };
+    let mut result = Vec::new();
+    if let Ok(entries) = fs::read_dir(&direct_path) {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if !name.is_empty() && name != "." && name != ".." {
+                    result.push(FileEntry {
+                        name,
+                        is_dir: entry.path().is_dir(),
+                    });
+                }
+            }
+        }
+    }
+    result.sort_by(|a, b| a.name.cmp(&b.name));
+    result
+}
+
+#[cfg(feature = "uefi")]
 fn list_direct_from_fs(
     fs: &mut boot::ScopedProtocol<uefi::proto::media::fs::SimpleFileSystem>,
     path: &str,
@@ -294,6 +392,7 @@ fn list_direct_from_fs(
     }
 }
 
+#[cfg(feature = "uefi")]
 fn try_list_direct_from_image_fs(path: &str, result: &mut Vec<FileEntry>) -> bool {
     let image = uefi::boot::image_handle();
     let Ok(mut fs) = uefi::boot::get_image_file_system(image) else {
@@ -302,6 +401,7 @@ fn try_list_direct_from_image_fs(path: &str, result: &mut Vec<FileEntry>) -> boo
     list_direct_from_fs(&mut fs, path, result)
 }
 
+#[cfg(feature = "uefi")]
 fn try_list_direct_from_any_fs(path: &str, result: &mut Vec<FileEntry>) -> bool {
     let Ok(handles) = boot::find_handles::<uefi::proto::media::fs::SimpleFileSystem>() else {
         return false;
@@ -327,6 +427,7 @@ fn try_list_direct_from_any_fs(path: &str, result: &mut Vec<FileEntry>) -> bool 
     false
 }
 
+#[cfg(feature = "uefi")]
 pub fn write_file(path: &str, data: &[u8]) -> bool {
     if let Some(mapped) = direct_fs_path(path) {
         return write_direct_file(&mapped, data);
@@ -335,6 +436,16 @@ pub fn write_file(path: &str, data: &[u8]) -> bool {
     false
 }
 
+#[cfg(feature = "esp32s3")]
+pub fn write_file(path: &str, data: &[u8]) -> bool {
+    if let Some(mapped) = direct_fs_path(path) {
+        return write_direct_file(&mapped, data);
+    }
+    log_line_str(&format!("VFS: unsafe file path '{}'", path));
+    false
+}
+
+#[cfg(feature = "uefi")]
 fn write_direct_file(path: &str, data: &[u8]) -> bool {
     let ih = uefi::boot::image_handle();
     if let Ok(fs) = uefi::boot::get_image_file_system(ih) {
@@ -372,6 +483,13 @@ fn write_direct_file(path: &str, data: &[u8]) -> bool {
     false
 }
 
+#[cfg(feature = "esp32s3")]
+fn write_direct_file(path: &str, data: &[u8]) -> bool {
+    let full_path = direct_fs_path(path).unwrap_or_default();
+    fs::write(&full_path, data).is_ok()
+}
+
+#[cfg(feature = "uefi")]
 fn write_to_fs(
     mut fs: boot::ScopedProtocol<uefi::proto::media::fs::SimpleFileSystem>,
     path: &str,
@@ -464,6 +582,7 @@ fn write_to_fs(
     true
 }
 
+#[cfg(feature = "uefi")]
 pub fn remove_file(path: &str) {
     if let Some(mapped) = direct_fs_path(path) {
         if remove_direct_file(&mapped) {
@@ -473,6 +592,17 @@ pub fn remove_file(path: &str) {
     log_line_str(&format!("VFS: remove_file '{}' failed", path));
 }
 
+#[cfg(feature = "esp32s3")]
+pub fn remove_file(path: &str) {
+    if let Some(mapped) = direct_fs_path(path) {
+        if remove_direct_file(&mapped) {
+            return;
+        }
+    }
+    log_line_str(&format!("VFS: remove_file '{}' failed", path));
+}
+
+#[cfg(feature = "uefi")]
 fn remove_direct_file(path: &str) -> bool {
     let ih = uefi::boot::image_handle();
     if let Ok(mut fs) = uefi::boot::get_image_file_system(ih) {
@@ -496,4 +626,10 @@ fn remove_direct_file(path: &str) -> bool {
         }
     }
     false
+}
+
+#[cfg(feature = "esp32s3")]
+fn remove_direct_file(path: &str) -> bool {
+    let full_path = direct_fs_path(path).unwrap_or_default();
+    fs::remove_file(&full_path).is_ok()
 }

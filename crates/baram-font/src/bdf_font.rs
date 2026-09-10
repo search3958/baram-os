@@ -8,9 +8,14 @@
 #![allow(dead_code)]
 
 use alloc::vec::Vec;
+#[cfg(feature = "uefi")]
 use uefi::boot;
+#[cfg(feature = "uefi")]
 use uefi::proto::media::file::{File, FileAttribute, FileMode, RegularFile};
+#[cfg(feature = "uefi")]
 use uefi::CStr16;
+#[cfg(feature = "esp32s3")]
+use esp_hal::fs;
 
 #[derive(Clone, Copy)]
 enum FontSource {
@@ -38,10 +43,6 @@ pub fn init(data: &'static [u8]) {
     }
 }
 
-/// Use a BDF file directly from the image filesystem.
-///
-/// This is the xiao path. `path` is only a small static filename; the BDF
-/// contents are read in 512-byte chunks and are not retained after scanning.
 pub fn init_file(path: &'static str) {
     unsafe {
         SOURCE = FontSource::File(path);
@@ -49,9 +50,6 @@ pub fn init_file(path: &'static str) {
     }
 }
 
-/// Drop every cached glyph explicitly when changing the font source.
-/// Normal repaint, pointer clicks, application changes, and scrolling must
-/// not call this.
 pub fn clear_cache() {
     unsafe {
         CACHE = None;
@@ -62,23 +60,14 @@ pub fn is_available() -> bool {
     !matches!(unsafe { SOURCE }, FontSource::None)
 }
 
-/// Convert a BDF glyph's baseline-relative BBX into a top offset inside the
-/// font's 8-pixel line box.  Misaki's global metrics are FONT_ASCENT=7 and
-/// FONT_DESCENT=1, so a glyph with `BBX h 0 0` starts at the line top while
-/// descenders naturally occupy the final pixels of the line.
 pub fn top_offset(height: i32, y_off: i32) -> i32 {
     7 - (y_off + height)
 }
 
-/// Prime the small glyph cache for text that may be shown next. The BDF file
-/// remains on storage; only the individual bitmap glyphs are retained.
 pub fn preload_text(text: &str) {
     preload_texts(&[text]);
 }
 
-/// Prime several strings with one sequential pass over a file-backed BDF.
-/// Calling `preload_text` separately for every label would otherwise reopen
-/// and rescan the font once per label.
 pub fn preload_texts(texts: &[&str]) {
     if !is_available() {
         return;
@@ -99,11 +88,16 @@ pub fn preload_texts(texts: &[&str]) {
         if wanted.is_empty() {
             return;
         }
-        preload_file_glyphs(path, &wanted);
+        #[cfg(feature = "uefi")]
+        {
+            preload_file_glyphs(path, &wanted);
+        }
+        #[cfg(feature = "esp32s3")]
+        {
+            preload_embedded_glyphs(path, &wanted);
+        }
         for ch in wanted {
             if cached_glyph(ch).is_none() {
-                // A zero-size entry is a negative cache. It preserves the
-                // default advance without retaining any font data.
                 cache_glyph(ch, &[], 0, 0, 8, 0);
             }
         }
@@ -191,6 +185,7 @@ fn cache_glyph(ch: char, bitmap: &[u8], width: i32, height: i32, advance: i32, y
     }
 }
 
+#[cfg(feature = "uefi")]
 fn preload_file_glyphs(path: &str, wanted: &[char]) {
     let Some(file) = open_file(path) else {
         return;
@@ -263,6 +258,7 @@ fn preload_file_glyphs(path: &str, wanted: &[char]) {
     }
 }
 
+#[cfg(feature = "uefi")]
 fn with_embedded_glyph<F>(data: &'static [u8], ch: char, mut draw: F) -> bool
 where
     F: FnMut(&[u8], i32, i32, i32, i32) -> bool,
@@ -343,6 +339,7 @@ where
     false
 }
 
+#[cfg(feature = "uefi")]
 fn with_file_glyph<F>(path: &str, ch: char, mut draw: F) -> bool
 where
     F: FnMut(&[u8], i32, i32, i32, i32) -> bool,
@@ -431,6 +428,7 @@ where
     false
 }
 
+#[cfg(feature = "uefi")]
 struct BdfReader {
     file: RegularFile,
     chunk: [u8; 512],
@@ -438,6 +436,7 @@ struct BdfReader {
     length: usize,
 }
 
+#[cfg(feature = "uefi")]
 impl BdfReader {
     fn new(file: RegularFile) -> Self {
         Self {
@@ -480,6 +479,7 @@ impl BdfReader {
     }
 }
 
+#[cfg(feature = "uefi")]
 fn open_file(path: &str) -> Option<RegularFile> {
     let image = boot::image_handle();
     let mut fs = boot::get_image_file_system(image).ok()?;
@@ -498,6 +498,18 @@ fn open_file(path: &str) -> Option<RegularFile> {
     root.open(path, FileMode::Read, FileAttribute::empty())
         .ok()?
         .into_regular_file()
+}
+
+#[cfg(feature = "esp32s3")]
+fn open_file(path: &str) -> Option<()> {
+    let _ = path;
+    None
+}
+
+#[cfg(feature = "esp32s3")]
+fn preload_embedded_glyphs(path: &str, wanted: &[char]) {
+    let _ = path;
+    let _ = wanted;
 }
 
 pub fn advance(ch: char) -> i32 {

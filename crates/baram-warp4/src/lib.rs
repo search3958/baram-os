@@ -20,7 +20,10 @@ use baram_font::ttf_font;
 use baram_font::{bdf_font, LayerFontExt};
 #[cfg(feature = "ttf")]
 use baram_graphics::svg;
+#[cfg(feature = "uefi")]
 use uefi::runtime;
+#[cfg(feature = "esp32s3")]
+use esp_hal::timer::TimerGroup;
 
 mod components;
 mod engine;

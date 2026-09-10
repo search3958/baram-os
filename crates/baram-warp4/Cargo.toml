@@ -7,10 +7,14 @@ edition = "2021"
 default = ["ttf"]
 ttf = ["baram-font/ttf", "baram-graphics/ttf"]
 bdf = ["baram-font/bdf", "baram-graphics/bdf"]
+uefi = ["dep:uefi"]
+esp32s3 = ["dep:esp-hal", "embedded-hal", "esp-hal/esp32s3"]
 
 [dependencies]
 baram-bsd = { path = "../baram-bsd", default-features = false }
 baram-core = { path = "../baram-core" }
 baram-font = { path = "../baram-font", default-features = false }
 baram-graphics = { path = "../baram-graphics", default-features = false }
-uefi = { workspace = true }
+uefi = { workspace = true, optional = true }
+esp-hal = { workspace = true, optional = true }
+embedded-hal = { workspace = true, optional = true }

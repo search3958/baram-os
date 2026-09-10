@@ -4,9 +4,19 @@ rustflags = [
     "-C", "linker=xtensa-esp32s3-none-elf-gcc",
 ]
 
+[target.'cfg(all(target_arch = "xtensa", target_os = "none"))']
+rustflags = [
+    "-C", "linker=xtensa-esp32s3-none-elf-gcc",
+]
+
+[target.uefi]
+runner = "qemu-system-x86_64"
+rustflags = [
+    "-C", "linker=x86_64-unknown-linux-gnu-gcc",
+]
+
 [build]
 target = "xtensa-esp32s3-none-elf"
 
-[unstable]
-build-std = ["core", "alloc"]
-build-std-features = ["compiler-builtins-mem"]
+[env]
+ESP_HAL_BUILD = "1"

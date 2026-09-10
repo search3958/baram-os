@@ -7,7 +7,9 @@ use alloc::format;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
+#[cfg(feature = "uefi")]
 use uefi::prelude::*;
+#[cfg(feature = "uefi")]
 use uefi::runtime;
 
 use baram_bsd::config;
@@ -19,6 +21,9 @@ use baram_windowserver::cursor;
 use baram_windowserver::soft_keyboard::{Key as SoftKey, KeyboardLanguage, SoftKeyboard};
 use baram_windowserver::window::{NativeFileDialogAction, SmoothScroll, WinId, WindowManager};
 use wana_kana::ConvertJapanese;
+
+#[cfg(feature = "esp32s3")]
+use nano_system::NanoSystem;
 
 fn kernel_key_event(event: nano_system::NanoKeyEvent) -> baram_core::KeyEvent {
     baram_core::KeyEvent {
@@ -57,18 +62,20 @@ fn kernel_pointer_event(
 }
 use nano_system::NanoSystem;
 
-// Keep this comfortably longer than the normal 16 ms present interval so
-// opening an app always has visible intermediate taskbar frames.
 const TASKBAR_ADD_ANIMATION_MS: u64 = 180;
 const MOZC_DICTIONARY: &str = include_str!("mozc_dictionary.tsv");
-// Generated from AOSP PinyinIME's Apache-2.0 raw dictionary. The source
-// spellings are joined so both `zhong guo` and `zhongguo` input resolve alike.
 const PINYIN_DICTIONARY: &str = include_str!("pinyin_dictionary.tsv");
-
 
 include!("ime.rs");
 include!("clock.rs");
 include!("runtime.rs");
 include!("navigation.rs");
 
+#[cfg(feature = "uefi")]
 nano_system::nano_entry!(baram_kernel_main);
+#[cfg(feature = "esp32s3")]
+#[no_mangle]
+pub unsafe extern "C" fn main() -> ! {
+    baram_kernel_main(nano_system::NanoSystem::start().unwrap());
+    loop {}
+}

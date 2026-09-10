@@ -4,12 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["security-hash"]
+default = ["security-hash", "uefi"]
 security-hash = ["dep:blake3"]
+uefi = ["dep:uefi", "dep:uefi-raw"]
+esp32s3 = ["dep:esp-hal", "dep:embedded-hal", "esp-hal/esp32s3", "baram-core/esp32s3"]
 
 [dependencies]
-baram-core = { path = "../baram-core" }
+baram-core = { path = "../baram-core", default-features = false }
 baram-font = { path = "../baram-font", default-features = false }
-uefi = { workspace = true }
-uefi-raw = { workspace = true }
+uefi = { workspace = true, optional = true }
+uefi-raw = { workspace = true, optional = true }
+esp-hal = { workspace = true, optional = true }
+embedded-hal = { workspace = true, optional = true }
 blake3 = { workspace = true, optional = true }
