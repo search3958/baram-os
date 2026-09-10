@@ -86,7 +86,7 @@ fn avx2_available() -> bool {
     }
 }
 
-#[cfg(all(feature = "uefi", target_arch = "x86_64"))]
+#[cfg(all(feature = "uefi", target_arch = "x86_64", target_feature = "avx2"))]
 #[target_feature(enable = "avx2")]
 unsafe fn copy_swap_rb_avx2(src: *const u32, dst: *mut u32, len: usize, wc: bool) {
     use core::arch::x86_64::*;
@@ -116,7 +116,7 @@ unsafe fn copy_swap_rb_avx2(src: *const u32, dst: *mut u32, len: usize, wc: bool
     }
 }
 
-#[cfg(all(feature = "uefi", target_arch = "x86_64"))]
+#[cfg(all(feature = "uefi", target_arch = "x86_64", target_feature = "avx2"))]
 #[target_feature(enable = "avx2")]
 unsafe fn copy_pixels_avx2(src: *const u32, dst: *mut u32, len: usize, wc: bool) {
     use core::arch::x86_64::*;
@@ -143,7 +143,7 @@ unsafe fn copy_swap_rb(
 ) {
     #[cfg(not(target_arch = "x86_64"))]
     let _ = (write_combining, avx2);
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
     {
         use core::arch::x86_64::*;
         if avx2 {
@@ -475,7 +475,7 @@ impl Screen {
                 );
             },
             _ => unsafe {
-                #[cfg(target_arch = "x86_64")]
+                #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
                 if self.avx2 {
                     copy_pixels_avx2(
                         row.as_ptr(),

@@ -48,7 +48,7 @@ fn avx2_available() -> bool {
     available
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
 #[target_feature(enable = "avx2")]
 unsafe fn blend_alpha_avx2(src: *const u32, dst: *mut u32, len: usize) {
     use core::arch::x86_64::*;
@@ -98,7 +98,7 @@ unsafe fn blend_alpha_avx2(src: *const u32, dst: *mut u32, len: usize) {
     }
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
 #[target_feature(enable = "avx2")]
 unsafe fn blend_global_alpha_avx2(src: *const u32, dst: *mut u32, len: usize, alpha: u8) {
     use core::arch::x86_64::*;

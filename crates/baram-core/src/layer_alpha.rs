@@ -19,7 +19,7 @@ impl LayerSystem {
         };
         self.mark_dirty_rect(dx, dy, dx + w, dy + h);
 
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
         if avx2_available() {
             for py in 0..h {
                 unsafe {

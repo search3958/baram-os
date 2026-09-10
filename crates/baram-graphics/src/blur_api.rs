@@ -73,7 +73,7 @@ fn gaussian_convolution_with_scratch(
     let mut kernel = alloc::vec![0i32; kernel_size];
     build_fixed_kernel_buffer(blur_r, &mut kernel);
 
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
     {
         if avx2_available() {
             unsafe {

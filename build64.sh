@@ -72,7 +72,7 @@ build_efi() {
     primary_bin="$(nano_primary_bin)"
     log "Building $EFI_NAME ..."
     rm -f "$TARGET_DIR/$EFI_NAME"
-    cargo +nightly build --release --target x86_64-unknown-uefi --bin "$primary_bin"
+    cargo +nightly build --release -Z build-std --target x86_64-unknown-uefi --bin "$primary_bin"
     if [ -f "$TARGET_DIR/$primary_bin.efi" ]; then
         cp "$TARGET_DIR/$primary_bin.efi" "$TARGET_DIR/$EFI_NAME"
     fi
@@ -81,7 +81,7 @@ build_efi() {
 
     log "Building Nano System application binaries..."
     for name in "${NANO_APP_NAMES[@]}"; do
-        cargo +nightly build --release --target x86_64-unknown-uefi --bin "$name"
+        cargo +nightly build --release -Z build-std --target x86_64-unknown-uefi --bin "$name"
     done
 }
 

@@ -52,14 +52,14 @@ done < <(nano_app_bins)
 
 build_efi() {
     log "Building BaramOS (aarch64-unknown-uefi) ..."
-    cargo +nightly build --release --target aarch64-unknown-uefi --bin "$PRIMARY_BIN"
+    cargo +nightly build --release -Z build-std --target aarch64-unknown-uefi --bin "$PRIMARY_BIN"
     local efi="$TARGET_DIR/$PRIMARY_BIN.efi"
     [ -f "$efi" ] || die "Build did not produce $efi"
     log "  -> $efi ($(stat -f %z "$efi") bytes)"
 
     log "Building subsystem binaries..."
     for name in "${SUBSYSTEM_NAMES[@]}"; do
-        cargo +nightly build --release --target aarch64-unknown-uefi --bin "$name"
+        cargo +nightly build --release -Z build-std --target aarch64-unknown-uefi --bin "$name"
         local src="$TARGET_DIR/$name"
         local dst="$TARGET_DIR/$name.efi"
         if [ -f "$src" ] && [ ! -f "$dst" ]; then

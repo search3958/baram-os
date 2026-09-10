@@ -409,7 +409,7 @@ impl LayerSystem {
                 continue;
             }
 
-            #[cfg(target_arch = "x86_64")]
+            #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
             if avx2_available() {
                 unsafe {
                     blend_global_alpha_avx2(

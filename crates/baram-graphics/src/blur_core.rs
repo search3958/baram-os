@@ -381,7 +381,7 @@ fn box_blur_2pass_with_scratch(
     blur_r: i32,
 ) {
     let r = (blur_r / 2).max(1);
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
     if avx2_available() {
         parallel_box_blur_h(src, tmp, w, h, r);
         unsafe {
@@ -426,7 +426,7 @@ pub fn blur_region_to_single_box(
 
     let mut scratch = alloc::vec![0u32; len];
     let radius = (blur_r / 2).max(1);
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
     if avx2_available() {
         parallel_box_blur_h(region, &mut scratch, w, region_h, radius);
         unsafe {

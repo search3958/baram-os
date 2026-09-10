@@ -131,7 +131,7 @@ build_esp32s3() {
     CARGO_PROFILE_RELEASE_LTO=fat \
     CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 \
     CARGO_PROFILE_RELEASE_OPT_LEVEL=z \
-    cargo +esp build --release --features esp32s3 --target "${ESP32S3_TARGET}" \
+    cargo +esp build --release -Z build-std --features esp32s3 --target "${ESP32S3_TARGET}" \
         --manifest-path "$SCRIPT_DIR/crates/baram-xiao/Cargo.toml"
     local xiao_target="$TARGET_DIR/xiao"
     test -f "$xiao_target" || test -f "$xiao_target.elf" || die "ESP32-S3 build did not produce $TARGET_DIR/xiao"
@@ -145,7 +145,7 @@ build_uefi() {
     CARGO_PROFILE_RELEASE_LTO=fat \
     CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 \
     CARGO_PROFILE_RELEASE_OPT_LEVEL=z \
-    cargo +nightly build --release --features uefi --target "${UEFI_TARGET}" \
+    cargo +nightly build --release -Z build-std --features uefi --target "${UEFI_TARGET}" \
         --manifest-path "$SCRIPT_DIR/crates/baram-xiao/Cargo.toml"
     local uefi_target="$UEFI_TARGET_DIR/baramos"
     test -f "$uefi_target" || test -f "$uefi_target.efi" || die "UEFI build did not produce $UEFI_TARGET_DIR/baramos"

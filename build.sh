@@ -124,7 +124,7 @@ done < <(nano_app_bins)
 
 build_efi() {
     log "Building $EFI_NAME ..."
-    cargo +nightly build --release --target aarch64-unknown-uefi --bin "$PRIMARY_BIN"
+    cargo +nightly build --release -Z build-std --target aarch64-unknown-uefi --bin "$PRIMARY_BIN"
     if [ -f "$TARGET_DIR/$PRIMARY_BIN" ] && [ ! -f "$TARGET_DIR/$PRIMARY_BIN.efi" ]; then
         cp "$TARGET_DIR/$PRIMARY_BIN" "$TARGET_DIR/$PRIMARY_BIN.efi"
     fi
@@ -136,7 +136,7 @@ build_efi() {
 
     log "Building subsystem binaries..."
     for name in "${SUBSYSTEM_NAMES[@]}"; do
-        cargo +nightly build --release --target aarch64-unknown-uefi --bin "$name"
+        cargo +nightly build --release -Z build-std --target aarch64-unknown-uefi --bin "$name"
         local src="$TARGET_DIR/$name"
         local dst="$TARGET_DIR/$name.efi"
         if [ -f "$src" ] && [ ! -f "$dst" ]; then
@@ -169,7 +169,7 @@ build_xiao() {
     CARGO_PROFILE_RELEASE_LTO=fat \
     CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 \
     CARGO_PROFILE_RELEASE_OPT_LEVEL=z \
-    cargo +nightly build --release --target aarch64-unknown-uefi \
+    cargo +nightly build --release -Z build-std --target aarch64-unknown-uefi \
         --manifest-path "$SCRIPT_DIR/crates/baram-xiao/Cargo.toml"
     test -f "$xiao_target" || die "Xiao build did not produce $xiao_target"
     cp "$xiao_target" "$xiao_efi"

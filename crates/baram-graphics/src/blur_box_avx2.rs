@@ -1,4 +1,4 @@
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
 mod box_avx2 {
     use super::*;
     use core::arch::x86_64::*;
