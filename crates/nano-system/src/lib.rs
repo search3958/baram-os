@@ -692,9 +692,6 @@ impl NanoSystem {
 
     #[cfg(feature = "uefi")]
     pub fn poll_pointer(&mut self) -> Option<NanoBasicPointerEvent> {
-        if let Some(event) = self.poll_usb_pointer() {
-            return Some(event);
-        }
         if self.prefer_simple_pointer {
             if let Some(event) = self.poll_simple_pointer() {
                 return Some(event);
@@ -711,6 +708,9 @@ impl NanoSystem {
                 self.prefer_simple_pointer = true;
                 return Some(event);
             }
+        }
+        if let Some(event) = self.poll_usb_pointer() {
+            return Some(event);
         }
         None
     }
