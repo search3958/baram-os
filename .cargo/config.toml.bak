@@ -11,6 +11,9 @@ rustflags = [
 
 [target.uefi]
 runner = "qemu-system-x86_64"
+rustflags = [
+    "-C", "linker=x86_64-unknown-linux-gnu-gcc",
+]
 
 [build]
 target = "xtensa-esp32s3-none-elf"
