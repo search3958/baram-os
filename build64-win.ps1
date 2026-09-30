@@ -98,30 +98,57 @@ if ($DoImage) {
     $Out = Join-Path $RuntimeDir $ImageName
     $Efi = Join-Path $TargetDir 'bootx64.efi'
     if (Test-Path $Out) { Remove-Item $Out -Force }
-    $fs = [System.IO.File]::Create($Out)
-    $fs.SetLength($ImageSizeMB * 1MB)
-    $fs.Close()
+    if (-not (Test-Path $RuntimeDir)) { New-Item -ItemType Directory -Path $RuntimeDir -Force | Out-Null }
 
-    mkfs.vfat -F 32 -n EFI $Out
-    mmd -i $Out ::/EFI
-    mmd -i $Out ::/EFI/BOOT
-    mmd -i $Out ::/EFI/BOOT/bin
-    mmd -i $Out ::/files
-    mmd -i $Out ::/files/app
-    mmd -i $Out ::/files/data
+    $ImageBytes = $ImageSizeMB * 1MB
+    if (Get-Command fsutil -ErrorAction SilentlyContinue) {
+        fsutil file createnew $Out $ImageBytes | Out-Null
+    } else {
+        $fs = [System.IO.File]::Create($Out)
+        $fs.SetLength($ImageBytes)
+        $fs.Close()
+    }
 
-    mcopy -i $Out $Efi ::/EFI/BOOT/BOOTX64.EFI
+    $mkfs = Join-Path $MingwBin 'mkfs.vfat.exe'
+    $mformat = Join-Path $MsysBin 'mformat.exe'
+    $mmd = Join-Path $MsysBin 'mmd.exe'
+    $mcopy = Join-Path $MsysBin 'mcopy.exe'
+    if (-not (Test-Path $mkfs)) { $mkfs = 'mkfs.vfat' }
+    if (-not (Test-Path $mformat)) { $mformat = 'mformat' }
+    if (-not (Test-Path $mmd)) { $mmd = 'mmd' }
+    if (-not (Test-Path $mcopy)) { $mcopy = 'mcopy' }
+
+    if (Get-Command $mformat -ErrorAction SilentlyContinue) {
+        & $mformat -i $Out -F -T ($ImageSizeMB * 1024 * 2) ::
+        if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] mformat failed"; exit 1 }
+    } else {
+        & $mkfs -F 32 -n EFI $Out
+        if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] mkfs.vfat failed"; exit 1 }
+    }
+
+    & $mmd -i $Out ::/EFI
+    & $mmd -i $Out ::/EFI/BOOT
+    & $mmd -i $Out ::/EFI/BOOT/bin
+    & $mmd -i $Out ::/files
+    & $mmd -i $Out ::/files/app
+    & $mmd -i $Out ::/files/data
+    if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] mmd failed"; exit 1 }
+
+    & $mcopy -i $Out $Efi ::/EFI/BOOT/BOOTX64.EFI
+    if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] mcopy BOOTX64.EFI failed"; exit 1 }
     $bins = @('baram-kernel','windowserver','font','graphics','iokit','bsd')
     foreach ($b in $bins) {
         $p = Join-Path $TargetDir "$b.efi"
         if (Test-Path $p) {
-            mcopy -i $Out $p ::/EFI/BOOT/bin/
+            & $mcopy -i $Out $p ::/EFI/BOOT/bin/
+            if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] mcopy $b.efi failed"; exit 1 }
             Write-Host "  [INFO] copied $b.efi"
         }
     }
     $config = Join-Path $RepoDir 'config.xml'
     if (Test-Path $config) {
-        mcopy -i $Out $config ::/EFI/BOOT/config.xml
+        & $mcopy -i $Out $config ::/EFI/BOOT/config.xml
+        if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] mcopy config.xml failed"; exit 1 }
         Write-Host '  [INFO] copied config.xml'
     }
 
@@ -147,45 +174,48 @@ if ($DoImage) {
                 $tmpArchive = Join-Path $StageApp "$name.tar.tmp"
                 $srcPosix = & $cygpath (Join-Path $srcApp $name)
                 $tmpArchivePosix = & $cygpath $tmpArchive
-        & (Join-Path $MsysBin 'tar.exe') --format=ustar -cf $tmpArchivePosix -C $srcPosix .
-        if ($LASTEXITCODE -eq 0) {
-            Remove-Item $_.FullName -Recurse -Force
-            Move-Item -LiteralPath $tmpArchive -Destination $archive -Force
-        } else {
-            Write-Host "[ERROR] tar failed for $name"
-            Pop-Location
-            exit 1
-        }
+                & (Join-Path $MsysBin 'tar.exe') --format=ustar -cf $tmpArchivePosix -C $srcPosix .
+                if ($LASTEXITCODE -eq 0) {
+                    Remove-Item $_.FullName -Recurse -Force
+                    Move-Item -LiteralPath $tmpArchive -Destination $archive -Force
+                } else {
+                    Write-Host "[ERROR] tar failed for $name"
+                    exit 1
+                }
             }
         }
         Get-ChildItem $StageApp -Force | ForEach-Object {
             $dest = "::/files/app/" + $_.Name
             if ($_.PSIsContainer) {
-                mcopy -s -i $Out $_.FullName $dest
+                & $mcopy -s -i $Out $_.FullName $dest
+                if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] mcopy app dir $($_.Name) failed"; exit 1 }
             } else {
-                mcopy -i $Out $_.FullName $dest
+                & $mcopy -i $Out $_.FullName $dest
+                if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] mcopy app file $($_.Name) failed"; exit 1 }
             }
         }
     }
+
     if (Test-Path $StageData) {
         Get-ChildItem $StageData -Force | ForEach-Object {
             $dest = "::/files/data/" + $_.Name
             if ($_.PSIsContainer) {
-                mcopy -s -i $Out $_.FullName $dest
+                & $mcopy -s -i $Out $_.FullName $dest
+                if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] mcopy data dir $($_.Name) failed"; exit 1 }
             } else {
-                mcopy -i $Out $_.FullName $dest
+                & $mcopy -i $Out $_.FullName $dest
+                if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] mcopy data file $($_.Name) failed"; exit 1 }
             }
         }
     }
 
-    $Startup = Join-Path $env:TEMP 'startup.nsh'
-    "fs0:`r`nEFI\BOOT\BOOTX64.EFI" | Set-Content -Path $Startup -Encoding ASCII
-    mcopy -i $Out $Startup ::/startup.nsh
+    $startupNsh = Join-Path $env:TEMP 'baramos-startup.nsh'
+    Set-Content -LiteralPath $startupNsh -Value "fs0:`r`nEFI\BOOT\BOOTX64.EFI`r`n" -Encoding ASCII
+    & $mcopy -i $Out $startupNsh ::/startup.nsh
+    if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] mcopy startup.nsh failed"; exit 1 }
+    Remove-Item $startupNsh -Force | Out-Null
 
-    Write-Host "[INFO] Image created: $Out"
-    Write-Host ''
-
-    if ($Mode -eq 'image') { exit 0 }
+    Write-Host "  -> $Out"
 }
 
 if ($DoRun) {
@@ -196,25 +226,44 @@ if ($DoRun) {
 
     Write-Host '[INFO] Launching QEMU...'
     Write-Host "[INFO]   disk: $(Join-Path $RuntimeDir $ImageName)"
-    Write-Host '[INFO] Press Ctrl+C to exit.'
+    Write-Host '[INFO] Press Ctrl+C to stop.'
     Write-Host ''
 
-    $qemuArgs = @(
-        '-cpu', 'qemu64',
-        '-m', '0.15G',
-        '-drive', "if=pflash,format=raw,readonly=on,file=$FwCode",
-        '-drive', "if=pflash,format=raw,file=$FwVars",
-        '-drive', "if=none,file=$(Join-Path $RuntimeDir $ImageName),format=raw,id=hd0",
-        '-device', 'virtio-blk-pci,drive=hd0',
-        '-device', 'virtio-vga,edid=on,xres=1280,yres=720',
-        '-device', 'qemu-xhci',
-        '-device', 'usb-tablet',
-        '-device', 'usb-mouse',
-        '-device', 'usb-kbd',
-        '-display', 'default',
-        '-serial', 'stdio',
-        '-monitor', 'none'
-    )
+    $qemuLog = Join-Path $RuntimeDir 'qemu-serial.log'
+    if (Test-Path $qemuLog) { Remove-Item $qemuLog -Force }
 
-    & (Join-Path $QemuBin 'qemu-system-x86_64w.exe') @qemuArgs
+    $qemuExe = Join-Path $QemuBin 'qemu-system-x86_64w.exe'
+    $batFile = Join-Path $env:TEMP 'baramos-qemu-run.bat'
+    $batContent = "@echo off`r`n`"$qemuExe`" -cpu qemu64 -m 0.15G -drive `"if=pflash,format=raw,readonly=on,file=$FwCode`" -drive `"if=pflash,format=raw,file=$FwVars`" -drive `"if=none,file=$RuntimeDir\$ImageName,format=raw,id=hd0`" -device virtio-blk-pci,drive=hd0 -device virtio-vga,edid=on,xres=1280,yres=720 -device qemu-xhci -device usb-tablet -device usb-mouse -device usb-kbd -display default -serial `"file:$qemuLog`" -monitor none"
+    Set-Content -LiteralPath $batFile -Value $batContent -Encoding ASCII
+    $process = Start-Process -FilePath 'cmd.exe' -ArgumentList "/c `"$batFile`"" -PassThru -NoNewWindow
+    Write-Host "[INFO] QEMU started (PID: $($process.Id)). Serial log: $qemuLog"
+    Write-Host ''
+
+    try {
+        while (!$process.HasExited) {
+            if (Test-Path $qemuLog) {
+                $content = Get-Content -Path $qemuLog -Raw -ErrorAction SilentlyContinue
+                if ($content) {
+                    Write-Host $content
+                    Clear-Content -Path $qemuLog -ErrorAction SilentlyContinue
+                }
+            }
+            Start-Sleep -Milliseconds 50
+        }
+    } finally {
+        if (Test-Path $qemuLog) {
+            $remaining = Get-Content -Path $qemuLog -Raw -ErrorAction SilentlyContinue
+            if ($remaining) { Write-Host $remaining }
+            Remove-Item $qemuLog -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path $batFile) {
+            Remove-Item $batFile -Force -ErrorAction SilentlyContinue
+        }
+        if (!$process.HasExited) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    Write-Host "[INFO] QEMU exited with code $($process.ExitCode)"
 }
