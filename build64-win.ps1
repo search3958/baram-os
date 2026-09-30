@@ -78,10 +78,9 @@ if ($DoBuild) {
 
     $bootaa64 = Join-Path $TargetDir 'bootaa64.efi'
     $bootx64 = Join-Path $TargetDir 'bootx64.efi'
-    if (-not (Test-Path $bootx64)) {
-        if (Test-Path $bootaa64) {
-            Copy-Item $bootaa64 $bootx64 -Force
-        }
+    if (Test-Path $bootx64) { Remove-Item $bootx64 -Force }
+    if (Test-Path $bootaa64) {
+        Copy-Item $bootaa64 $bootx64 -Force
     }
     if (-not (Test-Path $bootx64)) {
         Write-Host '[ERROR] bootx64.efi not found after build'
@@ -148,13 +147,15 @@ if ($DoImage) {
                 $tmpArchive = Join-Path $StageApp "$name.tar.tmp"
                 $srcPosix = & $cygpath (Join-Path $srcApp $name)
                 $tmpArchivePosix = & $cygpath $tmpArchive
-                & (Join-Path $MsysBin 'tar.exe') --format=ustar -cf $tmpArchivePosix -C $srcPosix .
-                if ($LASTEXITCODE -eq 0) {
-                    Remove-Item $_.FullName -Recurse -Force
-                    Move-Item -LiteralPath $tmpArchive -Destination $archive -Force
-                } else {
-                    Write-Host "[WARN] tar failed for $name"
-                }
+        & (Join-Path $MsysBin 'tar.exe') --format=ustar -cf $tmpArchivePosix -C $srcPosix .
+        if ($LASTEXITCODE -eq 0) {
+            Remove-Item $_.FullName -Recurse -Force
+            Move-Item -LiteralPath $tmpArchive -Destination $archive -Force
+        } else {
+            Write-Host "[ERROR] tar failed for $name"
+            Pop-Location
+            exit 1
+        }
             }
         }
         Get-ChildItem $StageApp -Force | ForEach-Object {
