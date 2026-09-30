@@ -18,13 +18,20 @@ set "RUST_TOOLCHAIN=nightly-x86_64-pc-windows-gnu"
 set "MINGW_BIN=C:\msys64\mingw64\bin"
 set "MSYS_BIN=C:\msys64\usr\bin"
 set "QEMU_BIN=%LOCALAPPDATA%\QEMU"
+set "RUST_BIN=%USERPROFILE%\.cargo\bin"
 
 if not exist "%QEMU_BIN%\qemu-system-x86_64w.exe" (
     echo [ERROR] QEMU not found at "%QEMU_BIN%"
     exit /b 1
 )
 
-set "PATH=%QEMU_BIN%;%MINGW_BIN%;%MSYS_BIN%;%PATH%"
+if not exist "%RUST_BIN%\cargo.exe" (
+    echo [ERROR] cargo not found at "%RUST_BIN%"
+    echo Install Rust via rustup.rs
+    exit /b 1
+)
+
+set "PATH=%QEMU_BIN%;%MINGW_BIN%;%MSYS_BIN%;%RUST_BIN%;%PATH%"
 
 echo [INFO] REPO_DIR=%REPO_DIR%
 echo [INFO] TARGET_DIR=%TARGET_DIR%
