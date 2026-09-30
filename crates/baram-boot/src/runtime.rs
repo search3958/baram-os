@@ -12,7 +12,12 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         }
     };
 
-    NanoSystem::serial_log("baram: screen ready\r\n");
+    NanoSystem::serial_log(&alloc::format!(
+        "baram: screen ready {}x{} stride={}\r\n",
+        screen.width(),
+        screen.height(),
+        screen.info().stride
+    ));
     unsafe { baram_font::log::init_screen(&screen) };
     log_line_str("BaramOS kernel: starting...");
 
@@ -65,14 +70,17 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
 
     let mut cursor_x: i32 = (screen.width() / 2) as i32;
     let mut cursor_y: i32 = (screen.height() / 2) as i32;
+    NanoSystem::serial_log("baram: loading display state\r\n");
     let mut display_state = baram_bsd::uri::DisplayState::new();
     baram_bsd::uri::load_settings_from_config(&mut display_state);
+    NanoSystem::serial_log("baram: display state loaded\r\n");
 
     if !baram_bsd::setup::is_setup_done() {
         log_line_str("BaramOS: first boot detected, starting setup wizard");
         let mut wizard = baram_bsd::setup::SetupWizard::new();
         let setup_w = screen.width();
         let setup_h = screen.height();
+        NanoSystem::serial_log(&alloc::format!("baram: setup {}x{}\r\n", setup_w, setup_h));
         let mut setup_engine = baram_windowserver::warp::WarpEngine::new_warp4("setup.w4a");
         setup_engine.set_chrome_visible(false);
         let mut setup_scene = LayerSystem::new(setup_w, setup_h);
@@ -80,7 +88,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         let mut setup_surface = LayerSystem::new(528, 320);
         let setup_origin = ((setup_w as i32 - 528) / 2, (setup_h as i32 - 320) / 2);
         let setup_card = (setup_origin.0, setup_origin.1, 528usize, 320usize);
+        NanoSystem::serial_log("baram: decoding setup wallpaper\r\n");
         let setup_wallpaper = wallpaper_for_state(&display_state, setup_w, setup_h);
+        NanoSystem::serial_log("baram: setup wallpaper decoded\r\n");
         let setup_background = setup_wallpaper.as_ref().map(|wallpaper| {
             NanoSystem::serial_log("baram: blurring setup wallpaper\r\n");
             let mut blurred = alloc::vec![0u32; setup_w * setup_h];

@@ -234,7 +234,7 @@ if ($DoRun) {
 
     $qemuExe = Join-Path $QemuBin 'qemu-system-x86_64w.exe'
     $batFile = Join-Path $env:TEMP 'baramos-qemu-run.bat'
-    $batContent = "@echo off`r`n`"$qemuExe`" -cpu qemu64 -m 0.15G -drive `"if=pflash,format=raw,readonly=on,file=$FwCode`" -drive `"if=pflash,format=raw,file=$FwVars`" -drive `"if=none,file=$RuntimeDir\$ImageName,format=raw,id=hd0`" -device virtio-blk-pci,drive=hd0 -device virtio-vga,edid=on,xres=1280,yres=720 -device qemu-xhci -device usb-tablet -device usb-mouse -device usb-kbd -display default -serial `"file:$qemuLog`" -monitor none"
+    $batContent = "@echo off`r`n`"$qemuExe`" -cpu qemu64 -m 1G -drive `"if=pflash,format=raw,readonly=on,file=$FwCode`" -drive `"if=pflash,format=raw,file=$FwVars`" -drive `"if=none,file=$RuntimeDir\$ImageName,format=raw,id=hd0`" -device virtio-blk-pci,drive=hd0 -device virtio-vga,edid=on,xres=1280,yres=720 -device qemu-xhci -device usb-tablet -device usb-mouse -device usb-kbd -display default -serial `"file:$qemuLog`" -monitor none"
     Set-Content -LiteralPath $batFile -Value $batContent -Encoding ASCII
     $process = Start-Process -FilePath 'cmd.exe' -ArgumentList "/c `"$batFile`"" -PassThru -NoNewWindow
     Write-Host "[INFO] QEMU started (PID: $($process.Id)). Serial log: $qemuLog"

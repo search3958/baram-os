@@ -184,12 +184,9 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
 
 pub const WALLPAPER_baram_PNG: &[u8] = include_bytes!("../../../files/data/wallpaper/baram.png");
 pub const WALLPAPER_HANUL_PNG: &[u8] = include_bytes!("../../../files/data/wallpaper/hanul.png");
-pub const WALLPAPER_REFLECT_PNG: &[u8] =
-    include_bytes!("../../../files/data/wallpaper/reflect.png");
 pub const WALLPAPERS: &[&[u8]] = &[
     WALLPAPER_baram_PNG,
     WALLPAPER_HANUL_PNG,
-    WALLPAPER_REFLECT_PNG,
 ];
 
 pub fn decode_wallpaper(bytes: &[u8], screen_w: usize, screen_h: usize) -> Option<Vec<u32>> {

@@ -86,8 +86,7 @@ fn avx2_available() -> bool {
     }
 }
 
-#[cfg(all(feature = "uefi", target_arch = "x86_64", target_feature = "avx2"))]
-#[target_feature(enable = "avx2")]
+#[cfg(all(feature = "uefi", target_arch = "x86_64"))]
 unsafe fn copy_swap_rb_avx2(src: *const u32, dst: *mut u32, len: usize, wc: bool) {
     use core::arch::x86_64::*;
     let keep = _mm256_set1_epi32(0xff00_ff00u32 as i32);
@@ -116,8 +115,7 @@ unsafe fn copy_swap_rb_avx2(src: *const u32, dst: *mut u32, len: usize, wc: bool
     }
 }
 
-#[cfg(all(feature = "uefi", target_arch = "x86_64", target_feature = "avx2"))]
-#[target_feature(enable = "avx2")]
+#[cfg(all(feature = "uefi", target_arch = "x86_64"))]
 unsafe fn copy_pixels_avx2(src: *const u32, dst: *mut u32, len: usize, wc: bool) {
     use core::arch::x86_64::*;
     let mut i = 0usize;
@@ -141,34 +139,18 @@ unsafe fn copy_swap_rb(
     write_combining: bool,
     avx2: bool,
 ) {
-    #[cfg(not(target_arch = "x86_64"))]
-    let _ = (write_combining, avx2);
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    #[cfg(all(target_arch = "x86_64"))]
     {
-        use core::arch::x86_64::*;
         if avx2 {
             copy_swap_rb_avx2(src, dst, len, write_combining);
             return;
         }
-        let keep = _mm_set1_epi32(0xff00_ff00u32 as i32);
-        let red = _mm_set1_epi32(0x00ff_0000);
-        let blue = _mm_set1_epi32(0x0000_00ff);
-        let mut i = 0usize;
-        while i + 4 <= len {
-            let p = _mm_loadu_si128(src.add(i) as *const __m128i);
-            let out = _mm_or_si128(
-                _mm_and_si128(p, keep),
-                _mm_or_si128(
-                    _mm_srli_epi32(_mm_and_si128(p, red), 16),
-                    _mm_slli_epi32(_mm_and_si128(p, blue), 16),
-                ),
-            );
-            _mm_storeu_si128(dst.add(i) as *mut __m128i, out);
-            i += 4;
-        }
-        for i in i..len {
+        let keep = 0xff00_ff00u32;
+        let red = 0x00ff_0000u32;
+        let blue = 0x0000_00ffu32;
+        for i in 0..len {
             let p = *src.add(i);
-            *dst.add(i) = (p & 0xff00_ff00) | ((p & 0x00ff_0000) >> 16) | ((p & 0x0000_00ff) << 16);
+            *dst.add(i) = (p & keep) | ((p & red) >> 16) | ((p & blue) << 16);
         }
         return;
     }
@@ -475,16 +457,18 @@ impl Screen {
                 );
             },
             _ => unsafe {
-                #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-                if self.avx2 {
-                    copy_pixels_avx2(
-                        row.as_ptr(),
-                        base.add(off_base) as *mut u32,
-                        n,
-                        self.write_combining,
-                    );
-                } else {
-                    ptr::copy_nonoverlapping(row.as_ptr(), base.add(off_base) as *mut u32, n);
+                #[cfg(all(target_arch = "x86_64"))]
+                {
+                    if self.avx2 {
+                        copy_pixels_avx2(
+                            row.as_ptr(),
+                            base.add(off_base) as *mut u32,
+                            n,
+                            self.write_combining,
+                        );
+                    } else {
+                        ptr::copy_nonoverlapping(row.as_ptr(), base.add(off_base) as *mut u32, n);
+                    }
                 }
                 #[cfg(not(target_arch = "x86_64"))]
                 ptr::copy_nonoverlapping(row.as_ptr(), base.add(off_base) as *mut u32, n);

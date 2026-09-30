@@ -116,6 +116,7 @@ fn kernel_main(mut nano: NanoSystem) -> Status {
         match baram_bsd::vfs::read_file(path) {
             data if !data.is_empty() => match sub_mgr.load_subsystem(&data) {
                 Ok(idx) => {
+                    log(&alloc::format!("BaramOS: subsystem {} loaded at index {}", path, idx));
                     let result = sub_mgr.init_subsystem(
                         idx,
                         &mut layer_buf,
