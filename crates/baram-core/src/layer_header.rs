@@ -26,8 +26,7 @@ fn avx2_available() -> bool {
     use core::arch::x86_64::{__cpuid, __cpuid_count, _xgetbv};
     use core::sync::atomic::{AtomicU8, Ordering};
 
-    // CPU/OS AVX state does not change while this UEFI image is running.
-    static AVAILABLE: AtomicU8 = AtomicU8::new(0); // 0 unknown, 1 no, 2 yes
+    static AVAILABLE: AtomicU8 = AtomicU8::new(0);
     match AVAILABLE.load(Ordering::Relaxed) {
         1 => return false,
         2 => return true,
@@ -38,10 +37,30 @@ fn avx2_available() -> bool {
         let leaf1 = __cpuid(1);
         const AVX: u32 = 1 << 28;
         const OSXSAVE: u32 = 1 << 27;
-        if leaf1.ecx & (AVX | OSXSAVE) != (AVX | OSXSAVE) || (_xgetbv(0) & 0x6) != 0x6 {
+        if leaf1.ecx & (AVX | OSXSAVE) != (AVX | OSXSAVE) {
             false
         } else {
-            (__cpuid_count(7, 0).ebx & (1 << 5)) != 0
+            let osxsave_cr4 = {
+                let cr4: u32;
+                core::arch::asm!(
+                    "mov {0}, cr4",
+                    out(reg) cr4,
+                    options(nostack, preserves_flags)
+                );
+                (cr4 & (1 << 18)) != 0
+            };
+            if !osxsave_cr4 {
+                false
+            } else if (_xgetbv(0) & 0x6) != 0x6 {
+                false
+            } else {
+                let max_leaf = __cpuid(0).eax;
+                if max_leaf < 7 {
+                    false
+                } else {
+                    __cpuid_count(7, 0).ebx & (1 << 5) != 0
+                }
+            }
         }
     };
     AVAILABLE.store(if available { 2 } else { 1 }, Ordering::Relaxed);

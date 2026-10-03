@@ -79,7 +79,10 @@ fn kernel_main(mut nano: NanoSystem) -> Status {
             s
         }
         Err(_s) => {
-            log("BaramOS: screen init failed");
+            let msg = "BaramOS: screen init failed (no GOP or no supported mode)";
+            log(msg);
+            let ser = alloc::format!("{}\r\n", msg);
+            NanoSystem::serial_log(&ser);
             return Status::UNSUPPORTED;
         }
     };
@@ -291,10 +294,9 @@ fn log(s: &str) {
         let _ = stdout.output_string(uefi::cstr16!("BaramOS: "));
         let mut buf = Vec::<u16>::with_capacity(s.len() + 1);
         for &b in s.as_bytes() {
-            if b >= 0x80 {
-                break;
+            if b < 0x80 {
+                buf.push(b as u16);
             }
-            buf.push(b as u16);
         }
         buf.push(0);
         if let Ok(cs) = uefi::CStr16::from_u16_with_nul(&buf) {
@@ -302,6 +304,8 @@ fn log(s: &str) {
         }
         let _ = stdout.output_string(uefi::cstr16!("\r\n"));
     });
+    let ser_msg = alloc::format!("{}\r\n", s);
+    NanoSystem::serial_log(&ser_msg);
 }
 
 #[cfg(feature = "esp32s3")]

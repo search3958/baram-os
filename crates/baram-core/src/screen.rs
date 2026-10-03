@@ -79,10 +79,31 @@ fn avx2_available() -> bool {
     use core::arch::x86_64::{__cpuid, __cpuid_count, _xgetbv};
     unsafe {
         let leaf1 = __cpuid(1);
-        let required = (1 << 28) | (1 << 27);
-        leaf1.ecx & required == required
-            && (_xgetbv(0) & 0x6) == 0x6
-            && (__cpuid_count(7, 0).ebx & (1 << 5)) != 0
+        const AVX: u32 = 1 << 28;
+        const OSXSAVE: u32 = 1 << 27;
+        if leaf1.ecx & (AVX | OSXSAVE) != (AVX | OSXSAVE) {
+            return false;
+        }
+        let osxsave_cr4 = {
+            let cr4: u32;
+            core::arch::asm!(
+                "mov {0}, cr4",
+                out(reg) cr4,
+                options(nostack, preserves_flags)
+            );
+            (cr4 & (1 << 18)) != 0
+        };
+        if !osxsave_cr4 {
+            return false;
+        }
+        if (_xgetbv(0) & 0x6) != 0x6 {
+            return false;
+        }
+        let max_leaf = __cpuid(0).eax;
+        if max_leaf < 7 {
+            return false;
+        }
+        __cpuid_count(7, 0).ebx & (1 << 5) != 0
     }
 }
 

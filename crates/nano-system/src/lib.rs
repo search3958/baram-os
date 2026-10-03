@@ -912,6 +912,18 @@ macro_rules! nano_entry {
         #[cfg(feature = "uefi")]
         #[uefi::entry]
         fn main() -> uefi::Status {
+            #[cfg(target_arch = "x86_64")]
+            unsafe {
+                let vga = 0xB8000 as *mut u8;
+                let msg = b"BaramOS: entry\r\n";
+                for (i, &b) in msg.iter().enumerate() {
+                    if i >= 80 * 25 {
+                        break;
+                    }
+                    *vga.add(i * 2) = if b >= 0x20 && b < 0x7F { b } else { b' ' };
+                    *vga.add(i * 2 + 1) = 0x07;
+                }
+            }
             $crate::NanoSystem::launch($application)
         }
 
@@ -931,6 +943,18 @@ macro_rules! nano_entry_with_target {
         #[cfg(feature = "uefi")]
         #[uefi::entry]
         fn main() -> uefi::Status {
+            #[cfg(target_arch = "x86_64")]
+            unsafe {
+                let vga = 0xB8000 as *mut u8;
+                let msg = b"BaramOS: entry\r\n";
+                for (i, &b) in msg.iter().enumerate() {
+                    if i >= 80 * 25 {
+                        break;
+                    }
+                    *vga.add(i * 2) = if b >= 0x20 && b < 0x7F { b } else { b' ' };
+                    *vga.add(i * 2 + 1) = 0x07;
+                }
+            }
             $crate::NanoSystem::launch_with_target($application, $width, $height)
         }
 
@@ -1276,13 +1300,28 @@ impl Write for PanicWriter {
 
 #[cfg(feature = "uefi")]
 fn serial_log(message: &str) {
-    let Ok(handle) = boot::get_handle_for_protocol::<Serial>() else {
+    if boot::get_handle_for_protocol::<Serial>()
+        .ok()
+        .and_then(|handle| boot::open_protocol_exclusive::<Serial>(handle).ok())
+        .is_some()
+    {
         return;
-    };
-    let Ok(mut serial) = boot::open_protocol_exclusive::<Serial>(handle) else {
-        return;
-    };
-    let _ = serial.write(message.as_bytes());
+    }
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        let vga = 0xB8000 as *mut u8;
+        let bytes = message.as_bytes();
+        let len = bytes.len().min(80 * 25);
+        for i in 0..len {
+            let ch = if bytes[i] >= 0x20 && bytes[i] < 0x7F {
+                bytes[i]
+            } else {
+                b' '
+            };
+            *vga.add(i * 2) = ch;
+            *vga.add(i * 2 + 1) = 0x07;
+        }
+    }
 }
 
 #[cfg(feature = "uefi")]
